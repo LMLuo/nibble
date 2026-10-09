@@ -1,0 +1,12 @@
+{
+  "name": "nibble",
+  "version": "0.1.1",
+  "description": "像素小生物陪伴插件：提问触发攻击、状态栏待机动画、/nibble 状态命令",
+  "author": {
+    "name": "nibble-cb"
+  },
+  "license": "MIT",
+  "keywords": ["pet", "pixel", "companion", "nibble"],
+  "hooks": "./hooks/hooks.json",
+  "commands": "./commands/"
+}

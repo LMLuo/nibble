@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Nibble</title>
+<style>
+  :root { --bg:#0D0F14; --panel:#161921; --line:#232838; --core:#4ECDC4; --hearth:#FFB86B; --pulse:#FF6B6B; --text:#E6EDF3; --dim:#9AA4B2; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family: ui-monospace, SFMono-Regular, Consolas, "JetBrains Mono", monospace; }
+  .wrap { padding:10px 12px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; align-content:center; }
+  .stage { display:flex; align-items:center; gap:12px; background:var(--panel);
+    border:1px solid var(--line); border-radius:12px; padding:12px;
+    box-shadow: 0 0 0 1px rgba(78,205,196,.06), 0 8px 24px rgba(0,0,0,.35); }
+  canvas { display:block; image-rendering:pixelated; width:216px; height:216px; }
+  body.in-view canvas { width:132px; height:132px; }
+  #player { filter: drop-shadow(0 0 6px rgba(78,205,196,.35)); }
+  #enemy  { filter: drop-shadow(0 0 6px rgba(255,184,107,.30)); }
+  .vs { display:block; filter: drop-shadow(0 0 6px rgba(255,107,107,.75)); }
+  .info { display:flex; flex-direction:column; gap:8px; min-width:220px; flex:1 1 240px; }
+  .meta { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--dim); flex-wrap:wrap; }
+  .lv { color:var(--core); font-weight:700; font-size:14px; }
+  .hp { width:130px; height:10px; background:var(--line); border-radius:5px; overflow:hidden; }
+  .hp > i { display:block; height:100%; width:50%; background:var(--core); transition:width .25s ease, background .25s ease; }
+  .ename { color:var(--hearth); font-weight:600; }
+  .log { font-size:13px; color:#C9D1D9; background:var(--panel); border:1px solid var(--line);
+    border-left:3px solid var(--pulse); border-radius:8px; padding:8px 12px; min-height:18px; }
+  .foot { display:flex; gap:8px; align-items:center; color:var(--dim); font-size:12px; flex-wrap:wrap; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px;
+    padding:4px 11px; font-family:inherit; font-size:12px; cursor:pointer; }
+  button:hover { border-color:var(--core); color:var(--core); }
+  .tip { color:#6b7484; }
+  #expand { display:none; }
+  body.in-view #expand { display:inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="player" width="24" height="24"></canvas>
+    <svg class="vs" width="34" height="34" viewBox="0 0 32 32" aria-label="对战">
+      <g stroke="#FF6B6B" stroke-width="2.6" stroke-linecap="round">
+        <line x1="6" y1="6" x2="23" y2="23" />
+        <line x1="26" y1="6" x2="9" y2="23" />
+        <line x1="4" y1="10" x2="10" y2="4" />
+        <line x1="28" y1="10" x2="22" y2="4" />
+      </g>
+      <g fill="#FF6B6B">
+        <circle cx="6" cy="25" r="1.8" />
+        <circle cx="26" cy="25" r="1.8" />
+      </g>
+    </svg>
+    <canvas id="enemy" width="24" height="24"></canvas>
+  </div>
+  <div class="info">
+    <div class="meta">
+      <span class="lv" id="lv">Lv 1</span>
+      <span class="hp"><i id="hpbar"></i></span>
+      <span id="hpnum">--/--</span>
+      <span class="ename" id="ename">—</span>
+    </div>
+    <div class="log" id="log">Nibble 待命中…</div>
+    <div class="foot">
+      <button id="attack">攻击一次</button>
+      <button id="reset">重置进度</button>
+      <button id="expand">在标签页打开</button>
+      <span class="tip">提问即攻击 · 空闲自动播放待机动画</span>
+    </div>
+  </div>
+</div>
+<!--PET_JS-->
+</body>
+</html>

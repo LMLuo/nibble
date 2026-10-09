@@ -1,0 +1,6 @@
+# 打包 VSIX 时排除的文件（lib/ 与 icon.png 必须保留）
+.vscodeignore
+config.json
+media/preview.html
+icon-src/**
+**/*.map

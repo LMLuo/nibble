@@ -1,0 +1,17 @@
+{
+  "name": "nibble-cb",
+  "description": "Nibble 风格陪伴小生物 —— CodeBuddy 原生插件（本地开发市场）",
+  "owner": {
+    "name": "nibble-cb"
+  },
+  "plugins": [
+    {
+      "name": "nibble",
+      "source": "./plugins/nibble",
+      "description": "像素小生物陪伴插件：提问触发攻击、状态栏待机动画、/nibble 状态命令（单机 Roguelite，跨会话存档）",
+      "version": "0.1.1",
+      "license": "MIT",
+      "keywords": ["pet", "pixel", "companion", "nibble", "hooks", "statusline"]
+    }
+  ]
+}

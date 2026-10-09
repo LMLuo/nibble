@@ -1,0 +1,100 @@
+name: Release VSIX
+
+# 打 tag 即发版（tag 必须与 vscode-extension/package.json 的 version 一致）：
+#   git tag v0.1.1 && git push origin v0.1.1
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 是否发布到市场
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # ovsx 1.x 要求 Node >= 22；vsce 也用它打包
+          node-version: '22'
+
+      - name: 校验 tag 与 package.json 版本一致
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -e
+          PKG=$(node -p "require('./vscode-extension/package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "package.json = $PKG, tag = $TAG"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::版本不一致：package.json 是 $PKG，tag 是 $TAG。请先同步版本号再打 tag。"
+            exit 1
+          fi
+
+      - name: 注入 repository（指向本仓库，市场页会显示源码链接）
+        run: node tools/set-repository.js
+
+      - name: 扩展自检（stub 跑 activate/tick/webview）
+        run: node tools/test-extension.js
+
+      - name: 插件冒烟测试（CLI 渲染 + 存档读写）
+        run: node plugins/nibble/hooks/cli.js do
+
+      - name: 同步自包含素材 lib/
+        run: node tools/sync-lib.js
+
+      - name: 打包 VSIX（官方 vsce，含 Open VSX 必需的 Assets / Icon）
+        run: |
+          set -e
+          VERSION=$(node -p "require('./vscode-extension/package.json').version")
+          cd vscode-extension
+          npx --yes @vscode/vsce@latest package --allow-missing-repository --no-dependencies \
+            --out "../dist/nibble-${VERSION}.vsix"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: nibble-vsix
+          path: dist/*.vsix
+
+      - name: 发布到 Open VSX（CodeBuddy 的扩展市场）
+        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -e
+          VSIX=$(ls dist/*.vsix | head -n1)
+          echo "将发布: $VSIX"
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::warning::未配置 secrets.OVSX_PAT，跳过 Open VSX 发布"
+            exit 0
+          fi
+          npx --yes ovsx publish "$VSIX" -p "$OVSX_PAT"
+
+      - name: 发布到 VS Code Marketplace（可选，配了 VSCE_PAT 才发）
+        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          set -e
+          VSIX=$(ls dist/*.vsix | head -n1)
+          if [ -z "$VSCE_PAT" ]; then
+            echo "未配置 secrets.VSCE_PAT，跳过 VS Code Marketplace"
+            exit 0
+          fi
+          npx --yes @vscode/vsce publish --packagePath "$VSIX" -p "$VSCE_PAT"
+
+      - name: 创建 GitHub Release 并附上 vsix
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.vsix
+          generate_release_notes: true

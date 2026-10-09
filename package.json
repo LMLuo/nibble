@@ -1,0 +1,17 @@
+{
+  "name": "nibble-cb",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Nibble 风格陪伴小生物：CodeBuddy 插件 + VS Code/CodeBuddy 扩展（本仓库同时是 CodeBuddy 本地市场根目录）",
+  "license": "MIT",
+  "scripts": {
+    "sync": "node tools/sync-lib.js",
+    "icon": "node tools/make-icon.js",
+    "test": "node tools/test-extension.js",
+    "package": "node tools/sync-lib.js && node tools/make-vsix.js",
+    "package:official": "node tools/sync-lib.js && node tools/pack-vsce.js",
+    "install-local": "node tools/install-extension.js",
+    "enable-mcp": "node tools/enable-mcp.js",
+    "preview": "node tools/preview-server.js"
+  }
+}

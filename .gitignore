@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# 构建产物：由 tools/sync-lib.js 从 plugins/nibble/hooks/ 生成
+vscode-extension/lib/
+
+# 图标的 AI 源图（icon.png 已入库，需要改图标时再放回来跑 npm run icon）
+vscode-extension/icon-src/
+
+# 本地预览产物
+vscode-extension/media/preview.html
+
+*.log
+.DS_Store

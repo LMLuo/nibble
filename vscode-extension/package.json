@@ -1,0 +1,109 @@
+{
+  "name": "nibble",
+  "displayName": "Nibble 像素小兽 (Pixel Pet)",
+  "description": "A pixel creature companion living in your status bar and bottom panel: attacks once per prompt or file save, levels up, remembers progress. 像素小生物陪伴插件：提问/保存即攻击、自动动画、跨会话存档。",
+  "version": "0.1.1",
+  "publisher": "nibble",
+  "license": "MIT",
+  "icon": "icon.png",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "pet",
+    "pixel",
+    "companion",
+    "nibble",
+    "fun",
+    "gamification"
+  ],
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "nibble.openPanel",
+        "title": "Nibble: 显示像素小生物（底部面板）",
+        "category": "Nibble"
+      },
+      {
+        "command": "nibble.attack",
+        "title": "Nibble: 攻击一次",
+        "category": "Nibble"
+      },
+      {
+        "command": "nibble.openInEditor",
+        "title": "Nibble: 在编辑器标签页中打开",
+        "category": "Nibble"
+      },
+      {
+        "command": "nibble.reset",
+        "title": "Nibble: 重置等级/经验/战绩",
+        "category": "Nibble"
+      },
+      {
+        "command": "nibble.toggleStatusBar",
+        "title": "Nibble: 显示/隐藏状态栏小生物",
+        "category": "Nibble"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "nibblePanel",
+          "title": "Nibble",
+          "icon": "media/pet.svg"
+        }
+      ]
+    },
+    "views": {
+      "nibblePanel": [
+        {
+          "id": "nibble.petView",
+          "name": "像素小生物",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Nibble",
+      "properties": {
+        "nibble.triggerMode": {
+          "type": "string",
+          "enum": [
+            "hook",
+            "onSave",
+            "manual"
+          ],
+          "enumDescriptions": [
+            "由配套的 CodeBuddy hooks 在每次提问时推进战斗（默认，零 token）",
+            "每次保存文件时攻击一次（独立使用本扩展且没有 hooks 时推荐）",
+            "不自动攻击，只在你点“攻击一次”或面板按钮时推进"
+          ],
+          "default": "hook",
+          "description": "战斗节拍来源"
+        },
+        "nibble.statusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "在底部状态栏显示像素小生物（等级 / HP 条 / 敌人）"
+        },
+        "nibble.autoOpenPanel": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动 IDE 时自动显示底部面板里的像素小生物"
+        },
+        "nibble.tickMs": {
+          "type": "number",
+          "default": 400,
+          "description": "刷新间隔（毫秒），越小动画越顺滑"
+        }
+      }
+    }
+  }
+}
