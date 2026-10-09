@@ -40,6 +40,9 @@ const args = [
   outFile,
 ]
 
+// dist/ 是 gitignore 的，全新克隆里不存在；vsce 不会自动建目录，会直接 ENOENT
+fs.mkdirSync(path.dirname(outFile), { recursive: true })
+
 console.log('📦 用官方 vsce 打包（Node ' + version + '）…')
 const r = spawnSync(npxCmd, args, { cwd: extDir, stdio: 'inherit', shell: isWin })
 if (r.error) {
