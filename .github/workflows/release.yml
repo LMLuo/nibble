@@ -55,9 +55,12 @@ jobs:
         run: |
           set -e
           VERSION=$(node -p "require('./vscode-extension/package.json').version")
+          mkdir -p dist          # dist/ 是 gitignore 的，全新检出里不存在，必须先建
           cd vscode-extension
           npx --yes @vscode/vsce@3 package --allow-missing-repository --no-dependencies \
             --out "../dist/nibble-${VERSION}.vsix"
+          test -f "../dist/nibble-${VERSION}.vsix" || { echo "::error::VSIX 未生成，请检查上一步日志"; exit 1; }
+          ls -l ../dist
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
