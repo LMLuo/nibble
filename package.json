@@ -13,5 +13,8 @@
     "install-local": "node tools/install-extension.js",
     "enable-mcp": "node tools/enable-mcp.js",
     "preview": "node tools/preview-server.js"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0"
   }
 }

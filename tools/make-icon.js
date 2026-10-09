@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 'use strict'
 // make-icon.js — 把 icon-src/ 里的 AI 生成图缩放成 128x128 的扩展图标（最近邻，保持像素感）
-// 依赖 pngjs（复用 nibble-mod 的 devDependency，仅构建期使用）
+// 依赖 pngjs（本仓库 devDependency，仅构建期使用；缺了就 npm i -D pngjs）
 // 用法: node tools/make-icon.js
 
 const fs = require('fs')
 const path = require('path')
 
-const pngjsPath = path.resolve(__dirname, '..', '..', 'nibble-mod', 'node_modules', 'pngjs')
-const { PNG } = require(pngjsPath)
+let PNG
+try {
+  PNG = require('pngjs').PNG
+} catch {
+  console.error('❌ 缺少构建期依赖 pngjs，请先执行：npm i -D pngjs')
+  process.exit(1)
+}
 
 const SIZE = 128
 const srcDir = path.resolve(__dirname, '..', 'vscode-extension', 'icon-src')

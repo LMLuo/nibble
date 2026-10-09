@@ -3,23 +3,25 @@
 这是 **CodeBuddy 经典插件体系**版本（`.codebuddy-plugin/plugin.json` + `hooks/hooks.json` + `commands/`），
 可以在**当前这台 CodeBuddy IDE** 里真正加载运行。
 
-> 另有一份 `nibble-mod/` 是 **Mods 运行时**版本（`register.ts` + `on('prompt.submit')` + `Raster`），
-> 那是 Claude Code 2.1.290+ 的能力，本机 CodeBuddy 不支持（`~/.codebuddy` 下搜 `prompt.submit`/`ui.render`/`AbovePrompt` 命中 0）。
-> 两份共享同一套 AI 生成的原创像素素材。
+> **已废弃的实现**：早期另有一份 `nibble-mod/`（Claude Code **Mods 运行时**版：`register.ts` +
+> `on('prompt.submit')` + `Raster` 真彩渲染），那是 Claude Code 2.1.290+ 的能力，本机 CodeBuddy
+> 不支持（`~/.codebuddy` 下搜 `prompt.submit`/`ui.render`/`AbovePrompt` 命中 0），从未在本机跑起来过。
+> 该目录已于 **2026-10-09 明确废弃并删除**；其中**不可再生**的素材源图与转换工具归档在
+> [`legacy-mods/`](legacy-mods/)（含归档说明与素材重建命令）。
 
 一只彩色像素小生物常驻**状态栏**（逐帧浮动动画）；你每次向 CodeBuddy 提问（`UserPromptSubmit` 节拍）就攻击一次野生敌人，
 并弹出一行战斗日志；打空血击败/捕获后刷新更强的下一只。等级/经验/战绩与当前敌人**跨会话存档**。
 
-## 与 Mods 版的能力对照
+## 能力一览
 
-| 能力 | Mods 版（nibble-mod） | 本版（CodeBuddy 原生） |
-|---|---|---|
-| 运行环境 | Claude Code Mods 运行时 | ✅ 本机 CodeBuddy |
-| 像素小生物位置 | 输入框上方窄带（AbovePrompt，真彩 Raster） | **状态栏**（1 行，256 色半方块）|
-| 完整 24×24 战场 | ✅ Raster 真彩 | `/nibble` 卡片（灰度阴影字符，代码块内显示）|
-| 每问一行战斗日志 | `$.ui.log` | `UserPromptSubmit` → `systemMessage`（仅用户可见、不进上下文、**不耗 token**）|
-| 待机动画 | `$.clock` 逐帧重绘 | 状态栏每次刷新按时间取帧 |
-| 跨会话存档 | `$.store` | `${CODEBUDDY_PLUGIN_DATA}/save.json` |
+| 能力 | 实现方式 |
+|---|---|
+| 运行环境 | ✅ 本机 CodeBuddy IDE（VS Code 内核） |
+| 像素小生物位置 | 底部**状态栏**小头像 + **底部面板** Webview（真彩 24×24） |
+| 完整 24×24 战场 | 底部面板 / 编辑器标签页（真彩，逐帧动画） |
+| 每问一行战斗日志 | `UserPromptSubmit` hook → `systemMessage`（仅用户可见、不进上下文、**不耗 token**） |
+| 待机动画 | 状态栏按时间取帧；面板逐帧刷新 |
+| 跨会话存档 | `~/.codebuddy/plugins/data/nibble/save.json` |
 
 ## 目录结构
 
@@ -190,8 +192,8 @@ git tag v0.1.0 && git push origin v0.1.0
 
 ## 素材与版权
 
-像素素材为 **AI 生成的原创像素画（CC0）**，源图见 `nibble-mod/assets/`，由 `nibble-mod/tools/png2grid.mjs`
-转成 24×24 网格后内联到 `hooks/pixels.js`。**未复制任何第三方素材**，详见 `nibble-mod/CREDITS.md`。
+像素素材为 **AI 生成的原创像素画（CC0）**，源图见 `legacy-mods/assets/`，由 `legacy-mods/tools/png2grid.mjs`
+转成 24×24 网格后内联到 `plugins/nibble/hooks/pixels.js`。**未复制任何第三方素材**，详见 `legacy-mods/CREDITS.md`。
 
 ### 设计灵感来源
 
