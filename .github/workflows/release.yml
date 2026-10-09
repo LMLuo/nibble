@@ -56,7 +56,7 @@ jobs:
           set -e
           VERSION=$(node -p "require('./vscode-extension/package.json').version")
           cd vscode-extension
-          npx --yes @vscode/vsce@latest package --allow-missing-repository --no-dependencies \
+          npx --yes @vscode/vsce@3 package --allow-missing-repository --no-dependencies \
             --out "../dist/nibble-${VERSION}.vsix"
 
       - name: 上传构建产物
@@ -77,7 +77,7 @@ jobs:
             echo "::warning::未配置 secrets.OVSX_PAT，跳过 Open VSX 发布"
             exit 0
           fi
-          npx --yes ovsx publish "$VSIX" -p "$OVSX_PAT"
+          npx --yes ovsx@1 publish "$VSIX" -p "$OVSX_PAT"
 
       - name: 发布到 VS Code Marketplace（可选，配了 VSCE_PAT 才发）
         if: github.event_name != 'workflow_dispatch' || inputs.publish
@@ -90,7 +90,7 @@ jobs:
             echo "未配置 secrets.VSCE_PAT，跳过 VS Code Marketplace"
             exit 0
           fi
-          npx --yes @vscode/vsce publish --packagePath "$VSIX" -p "$VSCE_PAT"
+          npx --yes @vscode/vsce@3 publish --packagePath "$VSIX" -p "$VSCE_PAT"
 
       - name: 创建 GitHub Release 并附上 vsix
         if: startsWith(github.ref, 'refs/tags/')
