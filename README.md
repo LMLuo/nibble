@@ -140,10 +140,14 @@ nibble-cb/                          ← 本仓库根目录（同时是 CodeBuddy
 
 ## 打包与发布
 
+> 📘 **完整流程（改功能 → 升版本 → 打 tag → 自动上架）见 [`PUBLISHING.md`](PUBLISHING.md)**，下面是速查。
+
 ```bash
 npm test                  # 扩展自检（stub 跑 activate / tick / webview）
-npm run package           # 离线打包（Node 16 可用）→ dist/nibble-0.1.0-offline.vsix
-npm run package:official   # 官方 vsce 打包（需 Node ≥ 20）→ dist/nibble-0.1.0.vsix ← 发布用这个
+npm run sync              # 把 hooks 源文件同步进扩展 lib/（改了那两个 JS 才需要）
+npm run package:official  # 官方 vsce 打包（需 Node ≥ 20）→ dist/nibble-<version>.vsix ← 发布用这个
+npm run package           # 离线兜底打包（Node 16 可用）→ dist/nibble-<version>-offline.vsix
+npm run install-local     # 装进本机 IDE 扩展目录（开发中预览，会自动清扫描缓存）
 ```
 
 > ⚠️ **发布必须用 `npm run package:official`**。自写的离线打包器（`tools/make-vsix.js`）体积小、不联网，
@@ -156,18 +160,20 @@ npm run package:official   # 官方 vsce 打包（需 Node ≥ 20）→ dist/nib
 > VSCE_NODE="C:/Users/<you>/.workbuddy/binaries/node/versions/22.22.2-3/npx.cmd" npm run package:official
 > ```
 
-**本地安装**：`Ctrl+Shift+P` → `Extensions: Install from VSIX...` → 选 `dist/nibble-0.1.0.vsix`。
+**本地安装**：`npm run install-local`（推荐，全自动：解析真实扩展目录 + 登记 + 清扫描缓存），
+或 `Ctrl+Shift+P` → `Extensions: Install from VSIX...`。
 
 **发布到 Open VSX**（CodeBuddy 的扩展市场就是 open-vsx.org，发完在 IDE 里搜 "Nibble" 即可安装）：
 
 ```bash
-# 一次性准备：
+# 一次性准备（本项目已完成）：
 #   1. open-vsx.org 用 GitHub 登录
 #   2. 注册 accounts.eclipse.org（表单里的 GitHub Username 必须与上面那个 GitHub 账号一致）
 #   3. open-vsx.org → Settings → Log in with Eclipse → 签署 Publisher Agreement
 #   4. open-vsx.org → Settings → Access Tokens → 生成 token（关掉就看不到，立刻保存）
-npx --yes ovsx@latest create-namespace nibble -p <token>      # 只需一次
-npx --yes ovsx@latest publish dist/nibble-0.1.0.vsix -p <token>
+# 命名空间 nibble 已创建，无需再 create-namespace
+node tools/set-repository.js LMLuo/nibble                     # CI 会自动做，手动发需自己注入
+npx --yes ovsx@1 publish dist/nibble-<version>.vsix -p <token>
 ```
 
 > ⚠️ **ovsx 1.x 要求 Node ≥ 22**。若本机默认 Node 较低（如 16），`npx` 会去装旧版 ovsx，
@@ -175,14 +181,14 @@ npx --yes ovsx@latest publish dist/nibble-0.1.0.vsix -p <token>
 > 解决：切到 Node 22，或显式指定该 Node 的 npx；并清掉坏缓存 `npm cache clean --force`。
 > `ovsx` 报 **406 Not Acceptable** 通常意味着 VSIX 缺少 Open VSX 必需资源，用 `npm run package:official` 重打即可。
 
-**自动发布**：仓库推上 GitHub，在 Settings → Secrets 添加 `OVSX_PAT`（可选再加 `VSCE_PAT` 以同时发微软市场），然后：
+**自动发布（推荐）**：仓库 Secrets 里**已配好** `OVSX_PAT`（可选再加 `VSCE_PAT` 以同时发微软市场），只需打 tag：
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.2 && git push origin v0.1.2
 ```
 
-工作流会依次：校验 tag 与 `package.json` 版本一致 → 拦截 `repository` 占位符 → 跑扩展自检 → 同步 `lib/` → 打包 →
-发布 Open VSX → 创建带 vsix 附件的 GitHub Release。
+工作流会依次：校验 tag 与 `vscode-extension/package.json` 版本一致 → 注入 `repository` → 扩展自检 → 插件冒烟测试 →
+同步 `lib/` → 官方 vsce 打包 → **发布 Open VSX** → 创建带 vsix 附件的 GitHub Release。
 
 ## 已知限制
 

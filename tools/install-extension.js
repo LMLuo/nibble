@@ -16,7 +16,8 @@ const marketRoot = path.resolve(__dirname, '..')
 const srcDir = path.join(marketRoot, 'vscode-extension')
 const sharedJs = path.join(marketRoot, 'plugins', 'nibble', 'hooks', 'nibble.js')
 const EXT_ID = 'nibble.nibble'
-const VERSION = '0.1.0'
+// 版本号从扩展的 package.json 读取，避免升版后忘记同步（曾写死 0.1.0）
+const VERSION = JSON.parse(fs.readFileSync(path.join(srcDir, 'package.json'), 'utf8')).version
 const FOLDER = EXT_ID + '-' + VERSION + '-universal'
 // 历史版本（2026-10-09 由 spinlings 更名为 nibble），安装时顺手清掉，避免残留两份
 const LEGACY_IDS = ['spinlings.spinlings']
