@@ -77,8 +77,9 @@ jobs:
           VSIX=$(ls dist/*.vsix | head -n1)
           echo "将发布: $VSIX"
           if [ -z "$OVSX_PAT" ]; then
-            echo "::warning::未配置 secrets.OVSX_PAT，跳过 Open VSX 发布"
-            exit 0
+            echo "::error::未读到 secrets.OVSX_PAT —— 无法发布到 Open VSX。"
+            echo "::error::请到 Settings → Secrets and variables → Actions → Secrets 标签页，添加名字严格为 OVSX_PAT 的仓库密钥（全大写 + 下划线，注意不要建成 Variables）。"
+            exit 1
           fi
           npx --yes ovsx@1 publish "$VSIX" -p "$OVSX_PAT"
 
