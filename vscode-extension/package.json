@@ -1,8 +1,8 @@
 {
   "name": "nibble",
   "displayName": "Nibble 像素小兽 (Pixel Pet)",
-  "description": "A pixel creature companion living in your status bar and bottom panel: attacks once per prompt or file save, levels up, remembers progress. 像素小生物陪伴插件：提问/保存即攻击、自动动画、跨会话存档。",
-  "version": "0.2.0",
+  "description": "A pixel puppy living in your status bar and bottom panel: attacks once per prompt or file save, levels up, collects 80 weapons, remembers progress. 像素小狗陪伴：提问/保存即攻击、升级、击败掉武器收集、跨会话存档。",
+  "version": "0.2.1",
   "publisher": "nibble",
   "license": "MIT",
   "icon": "icon.png",
