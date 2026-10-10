@@ -7,14 +7,43 @@
   :root { --bg:#0D0F14; --panel:#161921; --line:#232838; --core:#4ECDC4; --hearth:#FFB86B; --pulse:#FF6B6B; --text:#E6EDF3; --dim:#9AA4B2; }
   html, body { margin:0; padding:0; background:var(--bg); color:var(--text);
     font-family: ui-monospace, SFMono-Regular, Consolas, "JetBrains Mono", monospace; }
+  .hidden { display:none !important; }
+  .tabs { display:flex; gap:6px; padding:8px 12px 0; }
+  .tab { border-radius:8px 8px 0 0; border-bottom:none; }
+  .tab.active { border-color:var(--core); color:var(--core); }
   .wrap { padding:10px 12px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; align-content:center; }
-  .stage { display:flex; align-items:center; gap:12px; background:var(--panel);
-    border:1px solid var(--line); border-radius:12px; padding:12px;
+  .stage { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:12px;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px;
     box-shadow: 0 0 0 1px rgba(78,205,196,.06), 0 8px 24px rgba(0,0,0,.35); }
-  canvas { display:block; image-rendering:pixelated; width:216px; height:216px; }
-  body.in-view canvas { width:132px; height:132px; }
+  /* 注意：不要用无差别的 canvas、body.in-view canvas 规则设尺寸，
+     否则会以更高优先级覆盖 .wcell/.adetail 等组件尺寸（IDE 停靠模式曾因此把图鉴图标撑成 132px） */
+  canvas { display:block; image-rendering:pixelated; }
+  #player, #enemy { width:216px; height:216px; }
+  body.in-view #player, body.in-view #enemy { width:132px; height:132px; }
   #player { filter: drop-shadow(0 0 6px rgba(78,205,196,.35)); }
   #enemy  { filter: drop-shadow(0 0 6px rgba(255,184,107,.30)); }
+  /* 地面投影：让小生物"落地" */
+  .stage { position:relative; }
+  .stage::after { content:''; position:absolute; left:16px; right:16px; bottom:4px; height:16px;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.42), rgba(0,0,0,0) 72%); pointer-events:none; }
+  #player, #enemy, .vs, .slotWrap { position:relative; z-index:1; }
+  /* 装备槽：武器单独放一个格子展示，不再与小生物重叠 */
+  .slotWrap { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .slot { width:72px; height:72px; border-radius:10px; border:1px solid var(--line);
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.28));
+    display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative;
+    transition:border-color .25s ease, box-shadow .25s ease; }
+  .slot:hover { border-color:var(--core); }
+  .slot.empty { border-style:dashed; }
+  .slot.empty #weapon { display:none; }
+  .slot .ph { display:none; color:#4a5265; font-size:18px; font-weight:700; }
+  .slot.empty .ph { display:block; }
+  #weapon { width:56px; height:56px; }
+  .slotName { font-size:10px; color:var(--dim); max-width:78px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  body.in-view .slot { width:54px; height:54px; }
+  body.in-view #weapon { width:42px; height:42px; }
+  body.in-view .slotName { max-width:60px; }
   .vs { display:block; filter: drop-shadow(0 0 6px rgba(255,107,107,.75)); }
   .info { display:flex; flex-direction:column; gap:8px; min-width:220px; flex:1 1 240px; }
   .meta { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--dim); flex-wrap:wrap; }
@@ -31,41 +60,127 @@
   .tip { color:#6b7484; }
   #expand { display:none; }
   body.in-view #expand { display:inline-block; }
+  /* —— 武器库视图 —— */
+  #arsenalView { padding:10px 12px; }
+  /* 收集进度：按各稀有度数量比例分段（不是等宽彩条） */
+  .abar { display:flex; gap:2px; height:8px; margin:0 0 7px; }
+  .abar > span { flex:1 1 0; background:var(--line); border-radius:4px; overflow:hidden; }
+  .abar > span > i { display:block; height:100%; width:0%; transition:width .3s ease; }
+  .alegend { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; font-size:11px;
+    color:var(--dim); margin-bottom:9px; }
+  .alegend .atotal { color:var(--core); font-weight:700; font-size:13px; }
+  .achip { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+  .achip > i, .aghead > i { width:7px; height:7px; border-radius:50%; display:inline-block; }
+  .alegend .apity { margin-left:auto; }
+  /* 按稀有度分组的网格（分组标题 + 自适应列数，窄栏也整齐） */
+  .agroup { margin-bottom:10px; }
+  .aghead { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--dim); margin:0 0 5px 2px; }
+  .agrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(46px,1fr)); gap:4px; }
+  body.in-view .agrid { grid-template-columns:repeat(auto-fill, minmax(34px,1fr)); }
+  .wcell { position:relative; aspect-ratio:1; border:1px solid var(--line); border-radius:6px;
+    background:rgba(255,255,255,.02); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .wcell canvas { width:86%; height:86%; }
+  .wcell.owned { background:rgba(255,255,255,.055); }
+  .wcell.locked { opacity:.45; border-color:rgba(255,255,255,.06); }
+  .wcell.sel { border-color:var(--core); box-shadow:0 0 0 1px var(--core); }
+  .wcell .dot { position:absolute; right:3px; top:3px; width:5px; height:5px; border-radius:50%; }
+  .wcell .eq { position:absolute; left:3px; top:0; font-size:10px; line-height:1.1; color:var(--core); }
+  .wcell .cnt { position:absolute; right:3px; bottom:0; font-size:9px; color:var(--dim); }
+  /* —— 武器详情卡（点格子看故事）：单行为主，窄栏自动折行 —— */
+  .adetail { display:flex; flex-wrap:wrap; gap:10px; align-items:center; background:var(--panel);
+    border:1px solid var(--line); border-radius:8px; padding:8px 11px; margin-bottom:9px; }
+  .adetail canvas { width:44px; height:44px; flex:0 0 auto; }
+  body.in-view .adetail canvas { width:36px; height:36px; }
+  .atext { flex:1 1 180px; min-width:0; }
+  .adetail .aname { font-size:12px; font-weight:700; }
+  .adetail .astory { font-size:11px; color:var(--dim); line-height:1.55; margin-top:2px; }
+  .abtns { display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap; }
+  .abtns button { padding:2px 9px; font-size:11px; }
+  .abtns button:disabled { opacity:.5; cursor:default; border-color:var(--line); color:var(--dim); }
+  .wpn { color:var(--dim); }
+  /* —— 战利品 toast —— */
+  #toast { position:fixed; top:10px; right:10px; display:flex; align-items:center; gap:8px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 12px;
+    z-index:50; opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease; pointer-events:none; }
+  #toast.show { opacity:1; transform:translateY(0); }
+  #toast canvas { width:42px; height:42px; }
+  #toastText { font-size:13px; font-weight:600; }
+  #toastText .story { display:block; font-size:11px; font-weight:400; color:var(--dim);
+    max-width:230px; line-height:1.5; margin-top:3px; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-3px)} 75%{transform:translateX(3px)} }
+  .stage.shake { animation:shake .16s ease-in-out 3; }
+  @keyframes goldpulse { 0%,100%{box-shadow:0 0 0 1px rgba(78,205,196,.06), 0 8px 24px rgba(0,0,0,.35)}
+    50%{box-shadow:0 0 26px 5px rgba(255,215,0,.45)} }
+  .stage.gold { animation:goldpulse 1s ease-in-out 2; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="stage">
-    <canvas id="player" width="24" height="24"></canvas>
-    <svg class="vs" width="34" height="34" viewBox="0 0 32 32" aria-label="对战">
-      <g stroke="#FF6B6B" stroke-width="2.6" stroke-linecap="round">
-        <line x1="6" y1="6" x2="23" y2="23" />
-        <line x1="26" y1="6" x2="9" y2="23" />
-        <line x1="4" y1="10" x2="10" y2="4" />
-        <line x1="28" y1="10" x2="22" y2="4" />
-      </g>
-      <g fill="#FF6B6B">
-        <circle cx="6" cy="25" r="1.8" />
-        <circle cx="26" cy="25" r="1.8" />
-      </g>
-    </svg>
-    <canvas id="enemy" width="24" height="24"></canvas>
-  </div>
-  <div class="info">
-    <div class="meta">
-      <span class="lv" id="lv">Lv 1</span>
-      <span class="hp"><i id="hpbar"></i></span>
-      <span id="hpnum">--/--</span>
-      <span class="ename" id="ename">—</span>
+<div id="toast"><canvas id="toastIcon" width="24" height="24"></canvas><span id="toastText"></span></div>
+<div class="tabs">
+  <button id="tabBattle" class="tab active">⚔ 战斗</button>
+  <button id="tabArsenal" class="tab">🎒 武器库</button>
+</div>
+<div id="battleView">
+  <div class="wrap">
+    <div class="stage">
+      <div class="pwrap">
+        <canvas id="player" width="24" height="24"></canvas>
+      </div>
+      <div class="slotWrap">
+        <div class="slot empty" id="slot" title="点击去武器库选择武器">
+          <canvas id="weapon" width="24" height="24"></canvas>
+          <span class="ph">?</span>
+        </div>
+        <span class="slotName" id="slotName">未装备</span>
+      </div>
+      <svg class="vs" width="34" height="34" viewBox="0 0 32 32" aria-label="对战">
+        <g stroke="#FF6B6B" stroke-width="2.6" stroke-linecap="round">
+          <line x1="6" y1="6" x2="23" y2="23" />
+          <line x1="26" y1="6" x2="9" y2="23" />
+          <line x1="4" y1="10" x2="10" y2="4" />
+          <line x1="28" y1="10" x2="22" y2="4" />
+        </g>
+        <g fill="#FF6B6B">
+          <circle cx="6" cy="25" r="1.8" />
+          <circle cx="26" cy="25" r="1.8" />
+        </g>
+      </svg>
+      <canvas id="enemy" width="24" height="24"></canvas>
     </div>
-    <div class="log" id="log">Nibble 待命中…</div>
-    <div class="foot">
-      <button id="attack">攻击一次</button>
-      <button id="reset">重置进度</button>
-      <button id="expand">在标签页打开</button>
-      <span class="tip">提问即攻击 · 空闲自动播放待机动画</span>
+    <div class="info">
+      <div class="meta">
+        <span class="lv" id="lv">Lv 1</span>
+        <span class="hp"><i id="hpbar"></i></span>
+        <span id="hpnum">--/--</span>
+        <span class="ename" id="ename">—</span>
+        <span class="wpn" id="wpn"></span>
+      </div>
+      <div class="log" id="log">Nibble 待命中…</div>
+      <div class="foot">
+        <button id="attack">攻击一次</button>
+        <button id="changeWpn">更换武器</button>
+        <button id="reset">重置进度</button>
+        <button id="expand">在标签页打开</button>
+        <span class="tip">提问即攻击 · 击败掉武器 · 空闲自动待机</span>
+      </div>
     </div>
   </div>
+</div>
+<div id="arsenalView" class="hidden">
+  <div class="abar" id="abar"><span><i></i></span><span><i></i></span><span><i></i></span><span><i></i></span></div>
+  <div class="alegend" id="alegend"></div>
+  <div class="adetail" id="adetail">
+    <canvas id="adetailIcon" width="24" height="24"></canvas>
+    <div class="atext">
+      <div class="aname" id="adetailName">—</div>
+      <div class="astory" id="adetailStory">点选下方格子，查看这把武器的故事</div>
+    </div>
+    <div class="abtns" id="adetailBtns">
+      <button id="aEquip" class="hidden">装备此武器</button>
+      <button id="aAuto" class="hidden">跟随最近获得</button>
+    </div>
+  </div>
+  <div id="agroups"></div>
 </div>
 <!--PET_JS-->
 </body>

@@ -1,6 +1,6 @@
 {
   "name": "nibble-cb",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Nibble 风格陪伴小生物：CodeBuddy 插件 + VS Code/CodeBuddy 扩展（本仓库同时是 CodeBuddy 本地市场根目录）",
   "license": "MIT",

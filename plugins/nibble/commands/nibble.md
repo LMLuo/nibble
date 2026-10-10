@@ -1,6 +1,6 @@
 ---
-description: Nibble 小生物：查看状态 / attack 补刀 / reset 重置
-argument-hint: [attack|reset]
+description: Nibble 小生物：查看状态 / attack 补刀 / arsenal 武器库 / reset 重置
+argument-hint: [attack|arsenal|reset]
 allowed-tools: Bash(node:*)
 ---
 

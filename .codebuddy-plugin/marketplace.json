@@ -8,8 +8,8 @@
     {
       "name": "nibble",
       "source": "./plugins/nibble",
-      "description": "像素小生物陪伴插件：提问触发攻击、状态栏待机动画、/nibble 状态命令（单机 Roguelite，跨会话存档）",
-      "version": "0.1.1",
+      "description": "像素小生物陪伴插件：提问触发攻击、状态栏待机动画、击败掉武器与武器库收集、/nibble 命令（单机 Roguelite，跨会话存档）",
+      "version": "0.2.0",
       "license": "MIT",
       "keywords": ["pet", "pixel", "companion", "nibble", "hooks", "statusline"]
     }

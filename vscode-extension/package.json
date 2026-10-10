@@ -2,7 +2,7 @@
   "name": "nibble",
   "displayName": "Nibble 像素小兽 (Pixel Pet)",
   "description": "A pixel creature companion living in your status bar and bottom panel: attacks once per prompt or file save, levels up, remembers progress. 像素小生物陪伴插件：提问/保存即攻击、自动动画、跨会话存档。",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "nibble",
   "license": "MIT",
   "icon": "icon.png",
@@ -42,6 +42,11 @@
         "category": "Nibble"
       },
       {
+        "command": "nibble.openArsenal",
+        "title": "Nibble: 打开武器库",
+        "category": "Nibble"
+      },
+      {
         "command": "nibble.reset",
         "title": "Nibble: 重置等级/经验/战绩",
         "category": "Nibble"
@@ -49,6 +54,11 @@
       {
         "command": "nibble.toggleStatusBar",
         "title": "Nibble: 显示/隐藏状态栏小生物",
+        "category": "Nibble"
+      },
+      {
+        "command": "nibble.telemetryInfo",
+        "title": "Nibble: 关于匿名统计（发什么 / 如何关闭）",
         "category": "Nibble"
       }
     ],
@@ -102,6 +112,12 @@
           "type": "number",
           "default": 400,
           "description": "刷新间隔（毫秒），越小动画越顺滑"
+        },
+        "nibble.telemetry": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "发送**匿名激活统计**，让作者知道大概有多少人在使用这个扩展。\n\n只发送两个字段：本机随机生成的匿名 ID + 扩展版本号，**每台机器每天最多 1 次**。\n\n**不发送**代码、文件、路径、项目名、提问内容、账号、机器名。服务端不保存 IP。\n\n关闭后不会再发出任何请求（IDE 全局遥测关闭时本扩展也不会发送）。想先看看发了什么，运行命令 `Nibble: 关于匿名统计（发什么 / 如何关闭）`。",
+          "scope": "application"
         }
       }
     }

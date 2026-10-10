@@ -1,0 +1,22 @@
+# Cloudflare Worker 配置 —— Nibble 扩展的匿名激活统计端点
+# 部署步骤见同目录 README.md（需先创建 KV 命名空间并把 id 填到下面）
+name = "nibble-stats"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+# 关掉预览地址（每个版本会额外生成一个可公开访问的 *.workers.dev 临时地址，
+# 统计端点不需要它，开着只会扩大暴露面：改完要重新 npm run deploy 才生效）
+preview_urls = false
+
+# 默认地址：https://nibble-stats.<你的子域>.workers.dev
+# 想用自定义域名就加：
+# routes = [{ pattern = "nibble-stats.example.com", custom_domain = true }]
+
+[[kv_namespaces]]
+binding = "NIBBLE_KV"
+# 账号 c57e55ca852578116318411025167094 下的 KV 命名空间（2026-10-10 填入）
+id = "52ba3fbb03ea40c992c3a0690fa60748"
+
+# STATS_KEY 用密钥存（不要写在文件里）：
+#   npx wrangler secret put STATS_KEY

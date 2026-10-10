@@ -18,8 +18,9 @@
 
 | 路径 | 说明 | 为什么保留 |
 |---|---|---|
-| `assets/*.png` | 4 张 **AI 原创**像素源图（player / bat / slime / mimic） | AI 生成的图**无法精确重现**，是全部游戏形象的源头 |
+| `assets/*.png` | 4 张像素源图（player / bat / slime / mimic）。其中 bat / slime / mimic 为 **AI 原创**；player 自 2026-10-10 起是**作者自摄的小狗照片手工像素化**产物（源照片见 `assets/player-source-dog.jpg`） | 这些图**无法精确重现**，是全部游戏形象的源头 |
 | `tools/png2grid.mjs` | 把源图转成 24×24 调色板网格的工具（纯 CLI 参数驱动） | 换素材 / 重制形象的唯一工具链（需 `pngjs`，仅构建期） |
+| `tools/player-sprite.py` | 主角 `player.png` 的**可编辑设计稿**（字符网格 + 调色板 → 渲染成 24×24 RGBA） | 手改 PNG 不现实；改这个脚本即可重制主角形象（需 Pillow，仅构建期） |
 | `pixels/_pixels.gen.txt` | 上述工具的输出（调色板 + 网格数据） | 留着它，即使不装 `pngjs` 也能重建 `pixels.js` |
 | `reference/register.ts` | Mods 版的完整实现 | 仅作参考留档（它跑不起来；删掉不可恢复，故低成本留存） |
 | `CREDITS.md` | 素材署名与版权声明 | 许可与出处凭证 |
@@ -43,6 +44,10 @@ vscode-extension/lib/pixels.js             （构建产物，gitignore，打包�
 
 ## 想换素材怎么办
 
+0. **若改的是主角**：直接改 `legacy-mods/tools/player-sprite.py` 里的字符网格，
+   然后 `python legacy-mods/tools/player-sprite.py` 重新生成 `assets/player.png`
+   （它会校验内容框是否是 22×20 —— 这个尺寸下 `png2grid` 才不会重采样）。
+   若改的是敌人，走下面第 1 步。
 1. 把新图放进 `legacy-mods/assets/`（或直接覆盖现有 PNG）
 2. 在**仓库根**（`nibble-cb/`）装构建期依赖：`npm i -D pngjs`
 3. 在**仓库根**执行下面的命令，重新生成网格数据与预览图：

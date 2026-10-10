@@ -8,6 +8,7 @@
 const vscode = require('vscode')
 const fs = require('fs')
 const path = require('path')
+const telemetry = require('./telemetry')
 
 const VIEW_ID = 'nibble.petView'
 const MEDIA = () => path.join(__dirname, 'media')
@@ -23,6 +24,8 @@ let dissolveTicks = 0
 let lastBattles = -1
 let lastDefeats = -1
 let lastKey = ''
+let lastDropAt = -1
+let lastArsenalDefeats = -1
 
 // 定位素材/渲染模块。顺序：
 //   1) config.json 指向的工作区插件目录（本地开发时用，保持单一数据源）
@@ -58,6 +61,9 @@ const flat = (grid) => {
 
 function buildState() {
   const s = sp.reloadSave()
+  const arsenal = sp.arsenalSummary(s)
+  const shown = sp.equippedWeapon(s) // 战斗页展示：已装备 → 否则最近获得
+  const weaponSprite = shown ? sp.weaponSpriteGrid(shown.id, true) : null
   return {
     player: flat(sp.decodeGrid('player').grid),
     enemy: flat(sp.enemyGrid(s.enemy.type, s.enemy.rarity, false)),
@@ -74,6 +80,30 @@ function buildState() {
     defeats: s.defeats,
     log: s.lastLog || 'Nibble 待命中…（向 CodeBuddy 提问即可发动攻击）',
     key: s.enemy.type + '|' + s.enemy.rarity + '|' + s.enemy.maxHp + '|' + s.battles,
+    arsenal,
+    weaponSprite: weaponSprite ? flat(weaponSprite) : null,
+    weaponName: shown ? shown.name : null,
+    weaponRarity: shown ? shown.rarity : null,
+    weaponColor: shown ? sp.RARITY_COLOR[shown.rarity] : null,
+  }
+}
+
+// 武器库全量数据（80 把：清单 + 素材 + 收集进度），仅在掉落/收集变化时推送
+function buildArsenalData(arsenal) {
+  const sprites = {}
+  for (const w of sp.WEAPONS) {
+    const g = sp.weaponSpriteGrid(w.id, 'box') // 图鉴用统一内框，细长剑与胖锤视觉重量一致
+    sprites[w.id] = g ? flat(g) : null
+  }
+  return {
+    type: 'arsenalData',
+    owned: arsenal.ownedMap,
+    pity: arsenal.pity,
+    pityLimit: arsenal.pityLimit,
+    equipped: arsenal.equipped,
+    shown: arsenal.shown,
+    list: sp.WEAPONS,
+    sprites,
   }
 }
 
@@ -93,7 +123,7 @@ function tick() {
   }
   frame = (frame + 1) % 2
 
-  // 检测节拍：攻击 → 前冲；击败 → 敌方消散闪烁
+  // 检测节拍：攻击 → 前冲；击败 → 敌方消散闪烁 + 战利品提示
   if (lastBattles !== -1 && st.battles > lastBattles) lungeTicks = 3
   if (lastDefeats !== -1 && st.defeats > lastDefeats) dissolveTicks = 6
   lastBattles = st.battles
@@ -107,8 +137,11 @@ function tick() {
     statusItem.text =
       '$(heart) Lv' + st.level + ' ' + '█'.repeat(filled) + '░'.repeat(8 - filled) +
       ' ' + st.hp + '/' + st.maxHp + ' ' + st.enemyName
+    const last = st.arsenal.last
     statusItem.tooltip =
       'Nibble · Lv' + st.level + '　攻击 ' + st.battles + ' 次　击败 ' + st.defeats + ' 次\n' + st.log +
+      '\n⚔ 武器库 ' + st.arsenal.owned + '/' + st.arsenal.total + '　保底 ' + st.arsenal.pity + '/' + st.arsenal.pityLimit +
+      (last ? '\n最近获得：' + sp.RARITY_LABEL[last.rarity] + '·' + last.name : '') +
       '\n（点击显示底部面板）'
   }
 
@@ -118,6 +151,27 @@ function tick() {
   if (st.key !== lastKey) {
     lastKey = st.key
     targets.forEach((w) => post(w, Object.assign({ type: 'state' }, st)))
+  }
+  // 掉落瞬间：推战利品消息（面板弹 toast，史诗以上带特效）
+  const lastDrop = st.arsenal.last
+  if (lastDrop && lastDrop.at && lastDrop.at !== lastDropAt) {
+    lastDropAt = lastDrop.at
+    const msg = {
+      type: 'drop',
+      name: lastDrop.name,
+      rarity: lastDrop.rarity,
+      color: sp.RARITY_COLOR[lastDrop.rarity],
+      rarityLabel: sp.RARITY_LABEL[lastDrop.rarity],
+      story: lastDrop.story,
+      sprite: st.weaponSprite,
+    }
+    targets.forEach((w) => post(w, msg))
+  }
+  // 武器库数据：击败数变化（=新掉落入库）时推送全量
+  if (lastArsenalDefeats !== st.defeats) {
+    lastArsenalDefeats = st.defeats
+    const data = buildArsenalData(st.arsenal)
+    targets.forEach((w) => post(w, data))
   }
   const t = {
     type: 'tick',
@@ -152,7 +206,15 @@ function wireMessages(webview) {
     } else if (msg.type === 'reset') {
       sp.reset()
       lastKey = ''
+      lastArsenalDefeats = -1
       tick()
+    } else if (msg.type === 'equip') {
+      try {
+        sp.equipWeapon(msg.id || null) // null = 回到"跟随最近获得"
+        lastKey = ''
+        lastArsenalDefeats = -1
+        tick()
+      } catch { /* 存档读写失败时静默忽略 */ }
     } else if (msg.type === 'expand') {
       openEditorPanel()
     }
@@ -214,9 +276,55 @@ function focusView() {
   return vscode.commands.executeCommand(VIEW_ID + '.focus')
 }
 
+function extensionVersion(context) {
+  try {
+    return String(context.extension.packageJSON.version)
+  } catch {
+    return 'unknown'
+  }
+}
+
+// 「关于匿名统计」——把"发了什么、发到哪、怎么关"直接摆在用户面前
+async function showTelemetryInfo(opts) {
+  const info = telemetry.describe(opts)
+  const text = [
+    'Nibble 匿名统计：' + (info.enabled ? '已开启' : '未发送（' + info.reason + '）'),
+    '',
+    '只发送 2 个字段：匿名 ID（本机随机生成，与账号/机器无关）+ 扩展版本号 v' + opts.version + '。',
+    '不发送：代码 / 文件 / 路径 / 项目名 / 提问内容 / 账号 / 邮箱 / 机器名 / 操作系统；服务端不保存 IP。',
+    '频率：每台机器每天最多 1 次（当天首次打开 IDE 时）。',
+    info.last && info.last.day ? '上次上报：' + info.last.day + '（v' + info.last.version + '）' : '本机尚未上报过。',
+    '',
+    '统计端点：' + (info.configured ? info.endpoint : '未配置，不会发出任何请求'),
+    '完整说明见扩展页面的「更新日志」与 README「隐私」一节。',
+  ].join('\n')
+  const pick = await vscode.window.showInformationMessage(text, '重置匿名 ID', '关闭统计')
+  if (pick === '重置匿名 ID') {
+    telemetry.resetAnonId(opts.context)
+    vscode.window.showInformationMessage('Nibble：已生成新的匿名 ID，之后的统计不再与之前关联。')
+  } else if (pick === '关闭统计') {
+    try {
+      await vscode.workspace
+        .getConfiguration('nibble')
+        .update('telemetry', false, vscode.ConfigurationTarget.Global)
+      vscode.window.showInformationMessage('Nibble：已关闭匿名统计，之后不会再发出任何请求。')
+    } catch {
+      vscode.window.showInformationMessage('Nibble：自动关闭失败，请在设置里把 nibble.telemetry 改为 false。')
+    }
+  }
+}
+
 function activate(context) {
   loadShared()
   const cfg = () => vscode.workspace.getConfiguration('nibble')
+
+  // 匿名统计的入参集中在这里，方便「关于匿名统计」命令复用同一份配置
+  const telOpts = () => ({
+    vscode,
+    context,
+    version: extensionVersion(context),
+    getConfig: (k, d) => cfg().get(k, d),
+  })
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, new PetViewProvider(), {
@@ -236,9 +344,14 @@ function activate(context) {
     vscode.commands.registerCommand('nibble.openPanel', () => focusView()),
     vscode.commands.registerCommand('nibble.attack', () => doAttack(true)),
     vscode.commands.registerCommand('nibble.openInEditor', () => openEditorPanel()),
+    vscode.commands.registerCommand('nibble.openArsenal', () => {
+      openEditorPanel()
+      post(panel && panel.webview, { type: 'view', view: 'arsenal' })
+    }),
     vscode.commands.registerCommand('nibble.reset', () => {
       sp.reset()
       lastKey = ''
+      lastArsenalDefeats = -1
       tick()
       vscode.window.showInformationMessage('♻️ Nibble 等级/经验/战绩已重置')
     }),
@@ -248,6 +361,7 @@ function activate(context) {
       statusItem.dispose()
       statusItem = null
     }),
+    vscode.commands.registerCommand('nibble.telemetryInfo', () => showTelemetryInfo(telOpts())),
   )
 
   // 触发模式：hook（配套 CodeBuddy hooks 推进）/ onSave（保存文件即攻击）/ manual（只在手动时攻击）
@@ -261,6 +375,12 @@ function activate(context) {
   const ms = Math.max(150, Number(cfg().get('tickMs', 400)) || 400)
   timer = setInterval(tick, ms)
   tick()
+
+  // —— 匿名激活统计（唯一联网点）：每天最多一次、不阻塞启动、失败静默 ——
+  // 只发送「随机匿名 ID + 扩展版本号」，详见 telemetry.js 顶部说明与 CHANGELOG.md
+  Promise.resolve()
+    .then(() => telemetry.maybePing(telOpts()))
+    .catch(() => {})
 
   context.subscriptions.push({
     dispose: () => {

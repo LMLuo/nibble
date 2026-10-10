@@ -37,6 +37,7 @@ if (mode === 'do') {
   const sub = process.argv[3] || 'status'
   if (sub === 'attack') { sp.attack(s); sp.saveSave() }
   if (sub === 'reset') { sp.reset() }
+  if (sub === 'arsenal') { process.stdout.write(sp.arsenalCard()); process.exit(0) }
   process.stdout.write(sp.card())
   process.exit(0)
 }

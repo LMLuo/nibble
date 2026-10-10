@@ -10,6 +10,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { PIXEL_DATA } = require('./pixels')
+const { WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid } = require('./weapons')
 
 // ============================ 网格解码 / 变换 ============================
 const GRID_CACHE = new Map()
@@ -201,7 +202,21 @@ const savePath = () => path.join(dataDir(), 'save.json')
 let save = null
 
 function freshSave() {
-  return { v: 1, level: 1, exp: 0, battles: 0, defeats: 0, lastLog: null, logKind: 'idle', enemy: null }
+  return { v: 1, level: 1, exp: 0, battles: 0, defeats: 0, lastLog: null, logKind: 'idle', enemy: null, arsenal: { owned: {}, pity: 0 }, lastDrop: null, equipped: null }
+}
+
+// 解析武器库存档：只接受已知武器 id，未知 id 静默丢弃（向前兼容加/删武器）
+function parseArsenal(a) {
+  const out = { owned: {}, pity: 0 }
+  if (a && typeof a === 'object') {
+    if (a.owned && typeof a.owned === 'object') {
+      for (const k of Object.keys(a.owned)) {
+        if (WEAPON_INDEX[k]) out.owned[k] = Math.max(1, Number(a.owned[k]) || 1)
+      }
+    }
+    out.pity = Math.max(0, Number(a.pity) || 0)
+  }
+  return out
 }
 
 // 成长曲线
@@ -241,6 +256,13 @@ function loadSave() {
       }
       if (typeof parsed.lastLog === 'string') s.lastLog = parsed.lastLog
       if (typeof parsed.logKind === 'string') s.logKind = parsed.logKind
+      s.arsenal = parseArsenal(parsed.arsenal)
+      if (parsed.lastDrop && typeof parsed.lastDrop === 'object' && WEAPON_INDEX[parsed.lastDrop.id]) {
+        s.lastDrop = { id: parsed.lastDrop.id, at: Number(parsed.lastDrop.at) || 0 }
+      }
+      if (parsed.equipped && WEAPON_INDEX[parsed.equipped] && s.arsenal.owned[parsed.equipped]) {
+        s.equipped = parsed.equipped
+      }
       save = s
     }
   } catch { /* 无存档或损坏 → 全新开始 */ }
@@ -279,6 +301,12 @@ function attack(s) {
     const ups = gainExp(s, gain)
     let log = `击败野生 ${ENEMY_NAMES[s.enemy.type]}（${RARITY_LABEL[s.enemy.rarity]}）！${caught ? '捕获成功' : '未捕获'} +${gain}XP`
     if (ups > 0) log += `　⬆ 升级 Lv ${s.level}！`
+    if (!s.arsenal) s.arsenal = parseArsenal(null)
+    const drop = rollWeapon(s.arsenal.pity)
+    s.arsenal.pity = drop.pity
+    s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
+    s.lastDrop = { id: drop.weapon.id, at: Date.now() }
+    log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
     spawnEnemy(s)
     log += `　新的野生 ${ENEMY_NAMES[s.enemy.type]}（${RARITY_LABEL[s.enemy.rarity]}）出现`
     s.logKind = ups > 0 ? 'levelup' : 'victory'
@@ -334,12 +362,14 @@ function card() {
   const rows = []
   for (let i = 0; i < 12; i++) rows.push(p[i] + '   ⚔   ' + e[i])
   const hp = hpBar(s)
+  const sum = arsenalSummary(s)
   return [
     '```',
     ...rows,
     '```',
     `**Lv ${s.level}** · XP ${s.exp}/${xpNeed(s.level)} · 攻击 ${s.battles} 次 · 击败 ${s.defeats} 次`,
     `HP [${hp.bar}] ${hp.num}　野生 **${ENEMY_NAMES[s.enemy.type]}**（${RARITY_LABEL[s.enemy.rarity]}）`,
+    `⚔ 武器库 ${sum.owned}/${sum.total}　保底 ${sum.pity}/${sum.pityLimit}${sum.shown ? `　携带：${RARITY_LABEL[sum.shown.rarity]}·${sum.shown.name}${sum.equipped ? '' : '（跟随最近获得）'}` : ''}`,
     `最近：${s.lastLog || '待命中'}`,
   ].join('\n')
 }
@@ -360,17 +390,78 @@ function panel() {
   ].join('\n')
 }
 
+// 战斗页当前展示的武器：优先"已装备"，否则回落到最近获得的那把
+function equippedWeapon(s) {
+  const owned = (s && s.arsenal && s.arsenal.owned) || {}
+  if (s && s.equipped && WEAPON_INDEX[s.equipped] && owned[s.equipped]) return WEAPON_INDEX[s.equipped]
+  const ld = s && s.lastDrop && WEAPON_INDEX[s.lastDrop.id] && owned[s.lastDrop.id] ? WEAPON_INDEX[s.lastDrop.id] : null
+  return ld || null
+}
+
+// 装备/卸下（id 为 null 或未拥有则回到"跟随最近获得"）
+function equipWeapon(id) {
+  const s = loadSave()
+  if (!s.arsenal) s.arsenal = parseArsenal(null)
+  s.equipped = id && WEAPON_INDEX[id] && s.arsenal.owned[id] ? id : null
+  saveSave()
+  return s.equipped
+}
+
+// 武器库汇总（供状态栏 tooltip / 卡片 / 扩展使用）
+function arsenalSummary(s) {
+  const ar = (s && s.arsenal) || { owned: {}, pity: 0 }
+  const ld = s && s.lastDrop && WEAPON_INDEX[s.lastDrop.id] ? WEAPON_INDEX[s.lastDrop.id] : null
+  const shown = equippedWeapon(s)
+  return {
+    owned: Object.keys(ar.owned).length,
+    total: WEAPON_TOTAL,
+    pity: ar.pity,
+    pityLimit: PITY_LIMIT,
+    ownedMap: ar.owned,
+    equipped: (s && s.equipped) || null, // 玩家手动装备的
+    shown: shown ? { id: shown.id, name: shown.name, rarity: shown.rarity } : null, // 实际展示的
+    last: ld ? { id: ld.id, name: ld.name, rarity: ld.rarity, story: ld.story || '', at: (s.lastDrop && s.lastDrop.at) || 0 } : null,
+  }
+}
+
+// 武器库卡片：收集进度 + 保底进度 + 按稀有度分组列出已收集武器（纯收集，不影响战斗数值）
+function arsenalCard() {
+  const s = loadSave()
+  const ar = s.arsenal || parseArsenal(null)
+  const owned = ar.owned
+  const uniq = Object.keys(owned).length
+  const byRarity = { legendary: [], epic: [], rare: [], common: [] }
+  for (const w of WEAPONS) if (owned[w.id]) byRarity[w.rarity].push(w)
+  const order = ['legendary', 'epic', 'rare', 'common']
+  const lines = [
+    '**⚔ Nibble 武器库**',
+    '```',
+    `已收集 ${uniq}/${WEAPON_TOTAL}　保底 ${Math.min(ar.pity + 1, PITY_LIMIT)}/${PITY_LIMIT}`,
+    order.map((r) => `${RARITY_LABEL[r]} ${byRarity[r].length}/${RARITY_COUNTS[r]}`).join(' · '),
+    '```',
+  ]
+  for (const r of order) {
+    if (!byRarity[r].length) continue
+    lines.push(`**${RARITY_LABEL[r]}**`)
+    for (const w of byRarity[r]) lines.push(`- ${w.name}${owned[w.id] > 1 ? ` ×${owned[w.id]}` : ''}`)
+  }
+  if (!uniq) lines.push('（武器库空空如也——击败一只野生敌人即可掉落第一把！）')
+  return lines.join('\n')
+}
+
 function reset() {
   save = freshSave()
   spawnEnemy(save)
   saveSave()
-  return '♻️ 已重置等级/经验/战绩与当前敌人'
+  return '♻️ 已重置等级/经验/战绩/武器库与当前敌人'
 }
 
 module.exports = {
   loadSave, reloadSave, saveSave, attack, spawnEnemy, statusLine, battleLog, card, panel, miniSprite,
-  reset, hpBar, xpNeed, dataDir,
+  reset, hpBar, xpNeed, dataDir, arsenalCard, arsenalSummary, equippedWeapon, equipWeapon,
   // 供 IDE 扩展复用（把 24x24 网格交给 Webview 真彩绘制）
   decodeGrid, shiftGrid, enemyGrid, miniGrid, renderShaded, RARITY_COLOR,
   ENEMY_NAMES, RARITY_LABEL,
+  // 武器库（纯收集）：数据 + 掉落 + 素材
+  WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid,
 }

@@ -1,6 +1,9 @@
 node_modules/
 dist/
 
+# wrangler 本地状态（账号/缓存），不得入库
+.wrangler/
+
 # 构建产物：由 tools/sync-lib.js 从 plugins/nibble/hooks/ 生成
 vscode-extension/lib/
 
@@ -9,6 +12,13 @@ vscode-extension/icon-src/
 
 # 本地预览产物
 vscode-extension/media/preview.html
+
+# 武器素材：真源是 sheets/（AI 原图，不可再生），cells/ 由 tools/weapons-sprites.mjs 切出
+legacy-mods/assets/weapons/cells/
+
+# 像素校验用的放大预览图，由 png2grid.mjs / weapons-sprites.mjs 重新生成
+legacy-mods/preview/
+legacy-mods/tools/preview/
 
 *.log
 .DS_Store

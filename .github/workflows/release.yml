@@ -1,7 +1,7 @@
 name: Release VSIX
 
 # 打 tag 即发版（tag 必须与 vscode-extension/package.json 的 version 一致）：
-#   git tag v0.1.1 && git push origin v0.1.1
+#   git tag v0.2.0 && git push origin v0.2.0
 on:
   push:
     tags:

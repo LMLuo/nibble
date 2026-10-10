@@ -11,7 +11,7 @@
 
 | 名称 | 地址 | 谁在写 | 你要手动操作吗 |
 |---|---|---|---|
-| **本地工作区** | `f:\A投标\天津轻工业技术职业学院远程实训平台\nibble-cb` | 你（编辑器） | —— |
+| **本地工作区** | 你本机克隆下来的 `nibble-cb/` 目录 | 你（编辑器） | —— |
 | **Git 仓库**（源码托管） | `github.com/LMLuo/nibble` | **你**（`git push`） | ✅ 要，但不需任何人审核 |
 | **插件市场**（用户下载的地方） | `open-vsx.org/extension/nibble/nibble` | **CI**（打 tag 后自动） | ❌ 不用你管 |
 
@@ -38,9 +38,11 @@
 ```powershell
 # ① 改版本号：编辑 vscode-extension/package.json → "version": "0.1.2"
 #    （建议同时改根 package.json 的 version）
+#    同时更新 vscode-extension/CHANGELOG.md：把「未发布」改成实际版本号并写上本次改动
+#    （CHANGELOG 会展示在扩展市场页；涉及匿名统计等隐私相关改动必须写清楚）
 
 # ② 本地验证
-npm run test                 # 扩展自检（必须过）
+npm run test                 # 扩展自检（必须过；其中已覆盖匿名统计的跳过/静默失败路径）
 npm run package:official     # 打包 → dist/nibble-0.1.2.vsix（可跳过，CI 也会打）
 
 # ③ 提交并推送
@@ -68,6 +70,9 @@ git push origin v0.1.2
 | 像素形象（24×24 网格数据） | `plugins/nibble/hooks/pixels.js`（见第 7 节） |
 | "提问即攻击"的触发与 hook | `plugins/nibble/hooks/cli.js` |
 | 命令 / 菜单项 | `vscode-extension/package.json` 的 `contributes` |
+| **匿名统计：上报什么 / 发到哪** | `vscode-extension/telemetry.js`（★ 改这里要同步更新 `CHANGELOG.md` 与两个 README 的「隐私」） |
+| **匿名统计：接收端 / 查询界面** | `telemetry-worker/`（Cloudflare Workers + KV，独立部署，见第 10 节） |
+| 更新日志（市场页展示） | `vscode-extension/CHANGELOG.md` |
 | 打包 / 发布逻辑 | `tools/`、`.github/workflows/release.yml` |
 
 > ★ **重要**：`plugins/nibble/hooks/{nibble.js,pixels.js}` 是**源文件**；
@@ -271,7 +276,58 @@ node legacy-mods/tools/png2grid.mjs legacy-mods/pixels/_pixels.gen.txt legacy-mo
 
 ---
 
-## 9. 附：本项目当前的发布状态
+## 9. 匿名统计（接收端部署 / 上报地址变更）
+
+> 面向场景：**「匿名统计要重新部署、换地址，或临时停掉」**。
+
+扩展侧只有 `vscode-extension/telemetry.js` 一个文件，`ENDPOINT` 常量决定发到哪；接收端是
+`telemetry-worker/`（Cloudflare Workers + KV），**独立于扩展发布流程——改它不用发新版**。
+
+### 首次部署（一次性，约 5 分钟）
+
+详见 [`telemetry-worker/README.md`](telemetry-worker/README.md)，要点：
+
+```powershell
+cd telemetry-worker
+npm install                       # 装 wrangler
+npx wrangler login                # 浏览器授权，只需一次
+npm run kv:create                 # 把输出的 id 填进 wrangler.toml 的 [[kv_namespaces]].id
+npm run secret                    # 自定一个 STATS_KEY（看仪表盘用）
+npm run deploy                    # → https://nibble-stats.<子域>.workers.dev
+```
+
+然后把该地址 + `/ping` 填进 `vscode-extension/telemetry.js` 的 `ENDPOINT`，再 `npm run test`（**必须仍通过**，
+自检会跳过上报、不会真联网）。
+
+> ⚠️ `ENDPOINT` 仍是占位符（含 `REPLACE_ME`）时，扩展**不会发出任何请求**，也不会报错。
+> 所以"先合并代码、后端稍后再部署"是安全的；但要真出数据，必须填上地址并**发一次新版**（旧版不会开始上报）。
+
+### 看数据
+
+浏览器打开 `https://nibble-stats.<子域>.workers.dev/`，粘贴 `STATS_KEY`：今日 / 昨日 / 近 7 天 / 近 30 天活跃安装数、
+版本分布、近 30 天每日明细。命令行等价：`curl.exe -s ".../stats?key=<STATS_KEY>"`。
+
+### 口径与边界（别误读）
+
+- 数字是**活跃安装数（按日去重）**，不是用户总数；市场页"下载量"是累计下载——两者永远不相等，也不必相等。
+- 自然日按 **UTC** 切分（与国内时区差 8 小时，看"今天"时留意）。
+- KV 免费层 1000 次写/天，本方案每次上报约 3~4 次写 → 约 **250~300 台/天** 的天花板。
+- KV 无原子自增，同一秒并发可能少计 1，对"估算规模"没有影响。
+
+### 临时停掉 / 换地址
+
+- **停掉**：把 `ENDPOINT` 改回占位符发新版；但旧版用户仍会打到旧地址 —— 更省事的是直接
+  `npx wrangler delete` 删掉 Worker（旧版上报失败会静默忽略，用户无感）。
+- **换地址**：改 `ENDPOINT` 发新版即可；旧版继续打到旧地址（留着或删掉都行）。
+
+### 隐私红线（改统计时不可越线）
+
+只允许发送 **匿名随机 ID + 版本号** 这两个字段；不接收、不存储 IP / 代码 / 路径 / 项目名 / 账号 / 机器名。
+任何相关改动都必须同步更新 `vscode-extension/CHANGELOG.md` 与两个 README 的「隐私」一节——**这是对用户的承诺**。
+
+---
+
+## 10. 附：本项目当前的发布状态
 
 | 项 | 值 |
 |---|---|
@@ -280,4 +336,6 @@ node legacy-mods/tools/png2grid.mjs legacy-mods/pixels/_pixels.gen.txt legacy-mo
 | 源仓库 | `https://github.com/LMLuo/nibble`（public，默认分支 `main`） |
 | 市场页 | `https://open-vsx.org/extension/nibble/nibble` |
 | 命名空间认领 | ⏳ **进行中**（issue `EclipseFdn/open-vsx.org#13951`）—— 授予前市场页显示"未验证发布者 ⚠️"，**不影响安装使用** |
+| 匿名统计接收端 | `telemetry-worker/`（Cloudflare Workers + KV）；扩展侧地址在 `vscode-extension/telemetry.js` 的 `ENDPOINT`（**部署前为占位符 = 不上报**） |
+| 更新日志 | `vscode-extension/CHANGELOG.md`（`0.1.x` 的历史见 GitHub Releases） |
 | 已知风险 | `vscode-extension/icon-src/` 的 AI 图标源图被 gitignore 排除，**不在版本控制里** |

@@ -38,7 +38,7 @@ nibble-cb/                          # 本地市场根目录（/plugin marketplac
         │   ├── statusline.js          # 状态栏渲染（像素小生物 + HP 条 + 等级）
         │   ├── setup.js               # 把 statusLine 写进 ~/.codebuddy/settings.json
         │   ├── nibble.js           # 战斗核心 + 存档 + 渲染
-        │   └── pixels.js              # 24×24 像素素材（AI 生成原创，CC0）
+        │   └── pixels.js              # 24×24 像素素材（3 张 AI 原创 CC0 + 作者自摄小狗，见 CREDITS）
         └── commands/
             ├── nibble.md            # /nibble:nibble [attack|reset]
             └── nibble-setup.md      # /nibble:nibble-setup
@@ -48,7 +48,7 @@ nibble-cb/                          # 本地市场根目录（/plugin marketplac
 
 ```text
 # 1. 添加本地市场（指向 nibble-cb 目录）
-/plugin marketplace add "f:/A投标/天津轻工业技术职业学院远程实训平台/nibble-cb"
+/plugin marketplace add "<你本机 nibble-cb 目录的绝对路径>"
 
 # 2. 安装插件
 /plugin install nibble@nibble-cb
@@ -75,7 +75,8 @@ nibble-cb/                          # 本地市场根目录（/plugin marketplac
 | 向 CodeBuddy 提问 | 触发一次攻击，弹出一行战斗日志（如 `⚔ Nibble 攻击！野生 蝙蝠 -9 HP`）|
 | `/nibble:nibble` | 显示完整战场卡片（24×24 灰度像素 + HP 条 + 等级/经验/战绩）|
 | `/nibble:nibble attack` | 手动补一刀，并显示卡片 |
-| `/nibble:nibble reset` | 清空等级/经验/战绩与存档，重新开始 |
+| `/nibble:nibble arsenal` | 查看武器库（收集进度 / 保底进度 / 已收集武器列表） |
+| `/nibble:nibble reset` | 清空等级/经验/战绩/武器库与存档，重新开始 |
 
 ## 成长与存档（Roguelite）
 
@@ -85,15 +86,26 @@ nibble-cb/                          # 本地市场根目录（/plugin marketplac
 | 敌人 HP | `30 + (等级-1) × 8 + rand(16)` |
 | 稀有度 | 随等级小幅提升出金概率（每级 +1%，上限 +12%）|
 | 经验 | 击败获得 `8 + 敌人最大 HP`；升级所需经验 `20 + (等级-1) × 15`，可连续升级 |
-| 存档 | `${CODEBUDDY_PLUGIN_DATA}/save.json`（默认 `~/.codebuddy/plugins/data/nibble/save.json`）|
+| 武器掉落 | 每次击败必掉 1 把武器（纯收集，不影响数值）：普通 70% / 稀有 22% / 史诗 7% / 传说 1%，连续 40 次未出史诗以上触发保底 |
+| 存档 | `${CODEBUDDY_PLUGIN_DATA}/save.json`（默认 `~/.codebuddy/plugins/data/nibble/save.json`），含 `arsenal` 武器库字段 |
 | 落盘时机 | 每次攻击后、`SessionStart`、`SessionEnd` |
 
 ## 隐私
 
+**CodeBuddy 插件（hooks）**
+
 - `UserPromptSubmit` hook **只把 stdin 排空**，**从不解析** `prompt` / 文件 / 路径 / 代码内容，只按节拍推进战斗。
 - 战斗日志走顶层 `systemMessage`（CodeBuddy 官方定义：**只显示给用户，不传给 Agent**）+ `suppressOutput: true`，
   因此**不会进入模型上下文、不消耗 token**。
-- 不挂 MCP、不发网络请求、不读你的项目文件。
+- **插件本身不发起任何网络请求**、不挂 MCP、不读你的项目文件。
+
+**IDE 扩展（`vscode-extension/`）**
+
+- 扩展唯一联网的地方是**匿名激活统计**：只发送「本机随机匿名 ID + 扩展版本号」两个字段，
+  每台机器每天最多 1 次；**不发送**代码/文件/路径/项目名/提问内容/账号/机器名，服务端不保存 IP。
+- 自添加该统计的版本起，已在扩展的 `CHANGELOG.md` 与 README「隐私」里公开说明，
+  并提供 `nibble.telemetry=false` 开关与命令 `Nibble: 关于匿名统计（发什么 / 如何关闭）`；
+  关闭后扩展不再发出任何请求。接收端即本仓库的 [`telemetry-worker/`](telemetry-worker/)（源码公开，可自行审阅/自建）。
 
 ## 前置条件
 
@@ -111,8 +123,12 @@ nibble-cb/                          # 本地市场根目录（/plugin marketplac
 | `Nibble: 显示像素小生物（底部面板）` | 展开底部停靠视图 |
 | `Nibble: 攻击一次` | 手动推进一次 |
 | `Nibble: 在编辑器标签页中打开` | 放大查看完整 24×24 |
+| `Nibble: 打开武器库` | 打开武器库图鉴（80 格收集网格 + 进度条） |
 | `Nibble: 重置等级/经验/战绩` | 清空进度 |
 | `Nibble: 显示/隐藏状态栏小生物` | 切换状态栏 |
+| `Nibble: 关于匿名统计（发什么 / 如何关闭）` | 查看/关闭匿名激活统计、重置匿名 ID |
+
+**面板功能**：`⚔ 战斗 / 🎒 武器库` 双标签页；小生物手边实时展示最近获得的武器；击败掉落时弹**战利品 toast**（稀有度色边框，史诗以上震动、传说金光）；武器库页为 80 格收集图鉴（未收集为暗剪影+「?」，已收集带稀有度边框与 ×N 角标）。
 
 | 设置 | 默认 | 说明 |
 |---|---|---|
@@ -120,6 +136,7 @@ nibble-cb/                          # 本地市场根目录（/plugin marketplac
 | `nibble.statusBar` | `true` | 状态栏显示小生物 |
 | `nibble.autoOpenPanel` | `true` | 启动时自动展开底部面板 |
 | `nibble.tickMs` | `400` | 刷新间隔（毫秒） |
+| `nibble.telemetry` | `true` | 匿名激活统计（仅匿名 ID + 版本号，每天最多 1 次）；关闭后扩展不再联网 |
 
 只装扩展、不装插件时，把 `triggerMode` 设为 `onSave` 即可独立使用。
 
@@ -132,7 +149,10 @@ nibble-cb/                          ← 本仓库根目录（同时是 CodeBuddy
 ├── mcp/server.js                      # MCP 服务器（可选通道，在对话里看战场卡片）
 ├── vscode-extension/                  # VS Code / CodeBuddy 扩展（常驻 UI）
 │   ├── lib/                           # 构建产物：素材 + 渲染副本（不入库，npm run sync 生成）
+│   ├── telemetry.js                   # 匿名激活统计（扩展唯一的联网点，可关闭）
+│   ├── CHANGELOG.md                   # 更新日志（会展示在扩展市场页）
 │   └── icon.png                       # 128×128 图标
+├── telemetry-worker/                  # 统计接收端：Cloudflare Workers + KV（源码公开，可自建）
 ├── tools/                             # 构建脚本（同步 / 打包 / 图标 / 自检 / 本地安装 / 预览）
 ├── dist/                              # 打包产物 nibble-<version>.vsix
 └── .github/workflows/release.yml      # 打 tag 自动打包并发布
@@ -198,8 +218,10 @@ git tag v0.1.2 && git push origin v0.1.2
 
 ## 素材与版权
 
-像素素材为 **AI 生成的原创像素画（CC0）**，源图见 `legacy-mods/assets/`，由 `legacy-mods/tools/png2grid.mjs`
-转成 24×24 网格后内联到 `plugins/nibble/hooks/pixels.js`。**未复制任何第三方素材**，详见 `legacy-mods/CREDITS.md`。
+像素素材源图见 `legacy-mods/assets/`，由 `legacy-mods/tools/png2grid.mjs` 转成 24×24 网格后内联到
+`plugins/nibble/hooks/pixels.js`。其中 **3 张敌人素材（蝙蝠 / 史莱姆 / 宝箱怪）为 AI 生成的原创像素画（CC0）**；
+**玩家小生物自 2026-10-10 起替换为作者自摄小狗照片手工像素化的形象**（源照片与许可口径见 `legacy-mods/CREDITS.md`）。
+**未复制任何第三方素材**。
 
 ### 设计灵感来源
 

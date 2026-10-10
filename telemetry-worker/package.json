@@ -1,0 +1,18 @@
+{
+  "name": "nibble-telemetry-worker",
+  "private": true,
+  "description": "Nibble 扩展的匿名激活统计端点（Cloudflare Workers + KV）",
+  "license": "MIT",
+  "scripts": {
+    "login": "wrangler login",
+    "whoami": "wrangler whoami",
+    "kv:create": "wrangler kv namespace create NIBBLE_KV",
+    "secret": "wrangler secret put STATS_KEY",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail --format pretty"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

@@ -57,6 +57,11 @@ require('./sync-lib')()
 console.log('📦 已同步自包含副本 → vscode-extension/lib/')
 
 // ---------- 1. 拷进扩展目录 ----------
+// 先整体清空目标目录：避免上次安装残留（例如 Open VSX 版的 .vsixmanifest）或拷贝中断造成的半残状态
+if (fs.existsSync(destDir)) {
+  fs.rmSync(destDir, { recursive: true, force: true })
+  console.log('🧹 已清空旧的目标目录: ' + destDir)
+}
 fs.mkdirSync(destDir, { recursive: true })
 fs.cpSync(srcDir, destDir, {
   recursive: true,
