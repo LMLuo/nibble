@@ -1,233 +1,71 @@
-# nibble-cb —— Nibble 风格陪伴小生物（CodeBuddy 原生插件）
+# Nibble · 住在编辑器里的像素小狗
 
-这是 **CodeBuddy 经典插件体系**版本（`.codebuddy-plugin/plugin.json` + `hooks/hooks.json` + `commands/`），
-可以在**当前这台 CodeBuddy IDE** 里真正加载运行。
+[![Open VSX version](https://img.shields.io/open-vsx/v/nibble/nibble)](https://open-vsx.org/extension/nibble/nibble)
+[![Open VSX downloads](https://img.shields.io/open-vsx/dt/nibble/nibble)](https://open-vsx.org/extension/nibble/nibble)
 
-> **已废弃的实现**：早期另有一份 `nibble-mod/`（Claude Code **Mods 运行时**版：`register.ts` +
-> `on('prompt.submit')` + `Raster` 真彩渲染），那是 Claude Code 2.1.290+ 的能力，本机 CodeBuddy
-> 不支持（`~/.codebuddy` 下搜 `prompt.submit`/`ui.render`/`AbovePrompt` 命中 0），从未在本机跑起来过。
-> 该目录已于 **2026-10-09 明确废弃并删除**；其中**不可再生**的素材源图与转换工具归档在
-> [`legacy-mods/`](legacy-mods/)（含归档说明与素材重建命令）。
+一只像素小狗，住在 **CodeBuddy / VS Code** 的**状态栏**和**底部面板**里。
+你每次向 AI 提问（或保存文件），它就**打一只怪**——升级、掉武器、收集图鉴，进度跨会话保存。
 
-一只彩色像素小生物常驻**状态栏**（逐帧浮动动画）；你每次向 CodeBuddy 提问（`UserPromptSubmit` 节拍）就攻击一次野生敌人，
-并弹出一行战斗日志；打空血击败/捕获后刷新更强的下一只。等级/经验/战绩与当前敌人**跨会话存档**。
+<p><img src="docs/player-pixel.png" width="140" alt="Nibble 像素小狗"></p>
 
-## 能力一览
+## 它是谁：我的狗「拾玖」
 
-| 能力 | 实现方式 |
-|---|---|
-| 运行环境 | ✅ 本机 CodeBuddy IDE（VS Code 内核） |
-| 像素小生物位置 | 底部**状态栏**小头像 + **底部面板** Webview（真彩 24×24） |
-| 完整 24×24 战场 | 底部面板 / 编辑器标签页（真彩，逐帧动画） |
-| 每问一行战斗日志 | `UserPromptSubmit` hook → `systemMessage`（仅用户可见、不进上下文、**不耗 token**） |
-| 待机动画 | 状态栏按时间取帧；面板逐帧刷新 |
-| 跨会话存档 | `~/.codebuddy/plugins/data/nibble/save.json` |
+游戏里这只像素小狗，是照着我家的狗画的——**约克夏串串**，名字叫 **拾玖**。
 
-## 目录结构
+<p><img src="legacy-mods/assets/player-source-dog.jpg" width="300" alt="拾玖的照片"></p>
 
-```
-nibble-cb/                          # 本地市场根目录（/plugin marketplace add 指向这里）
-├── .codebuddy-plugin/
-│   └── marketplace.json               # 市场清单（name/owner/plugins）
-└── plugins/
-    └── nibble/                     # 插件根目录
-        ├── .codebuddy-plugin/plugin.json
-        ├── hooks/
-        │   ├── hooks.json             # SessionStart / UserPromptSubmit / SessionEnd
-        │   ├── cli.js                 # hook 与命令的统一入口
-        │   ├── statusline.js          # 状态栏渲染（像素小生物 + HP 条 + 等级）
-        │   ├── setup.js               # 把 statusLine 写进 ~/.codebuddy/settings.json
-        │   ├── nibble.js           # 战斗核心 + 存档 + 渲染
-        │   └── pixels.js              # 24×24 像素素材（3 张 AI 原创 CC0 + 作者自摄小狗，见 CREDITS）
-        └── commands/
-            ├── nibble.md            # /nibble:nibble [attack|reset]
-            └── nibble-setup.md      # /nibble:nibble-setup
-```
+把它的照片手工点成 24×24 像素（11 色），就成了游戏里的样子。它平时陪我写代码，现在也顺便帮你打工。
 
-## 安装（4 步）
+## 安装
+
+**方式 1：装扩展（推荐，开箱可用）**
+
+在 [Open VSX 市场](https://open-vsx.org/extension/nibble/nibble) 搜索 **Nibble** 安装，或命令面板执行
+`Extensions: Install from VSIX...`。默认**保存文件即攻击**，不需要其他依赖。
+
+**方式 2：再装本仓库的插件 → 提问即攻击（默认玩法）**
 
 ```text
-# 1. 添加本地市场（指向 nibble-cb 目录）
-/plugin marketplace add "<你本机 nibble-cb 目录的绝对路径>"
-
-# 2. 安装插件
+/plugin marketplace add "<本仓库目录>"
 /plugin install nibble@nibble-cb
-
-# 3. 让插件生效（无需重启）
 /reload-plugins
-
-# 4. 把像素小生物写进状态栏
-/nibble:nibble-setup
+/nibble:nibble-setup          # 把像素小狗写进状态栏
 ```
 
-第 4 步会向 `~/.codebuddy/settings.json` 写入：
+需要 **Node ≥ 16**；Windows 下 CodeBuddy 的 hooks 走 Git Bash，故需安装 [Git for Windows](https://git-scm.com/download/win)。
 
-```json
-{ "statusLine": { "type": "command", "command": "node \"<插件目录>/hooks/statusline.js\"" } }
-```
+> 设置项：`nibble.triggerMode`（`hook` 提问即攻击 / `onSave` 保存即攻击 / `manual` 仅手动）、`nibble.statusBar`、`nibble.tickMs`。
 
-若状态栏没立刻出现：重启 CodeBuddy，或运行 `/statusline` 检查配置。也可以手动添加上面这段。
+## 怎么玩
 
-## 使用
-
-| 操作 | 说明 |
+| 你做什么 | 它做什么 |
 |---|---|
-| 向 CodeBuddy 提问 | 触发一次攻击，弹出一行战斗日志（如 `⚔ Nibble 攻击！野生 蝙蝠 -9 HP`）|
-| `/nibble:nibble` | 显示完整战场卡片（24×24 灰度像素 + HP 条 + 等级/经验/战绩）|
-| `/nibble:nibble attack` | 手动补一刀，并显示卡片 |
-| `/nibble:nibble arsenal` | 查看武器库（收集进度 / 保底进度 / 已收集武器列表） |
-| `/nibble:nibble reset` | 清空等级/经验/战绩/武器库与存档，重新开始 |
+| 提问 / 保存文件 | 攻击一次野生敌人 |
+| 击败敌人 | 升级并**必掉 1 把武器**（普通 70% / 稀有 22% / 史诗 7% / 传说 1%，40 次保底） |
+| 收集武器 | 80 把各有独立像素图 + 一段小故事；面板「🎒 武器库」按稀有度分组查看 |
+| 挑一把带上 | 武器库详情卡点「装备此武器」，战斗页的装备槽就换成它（图鉴里有 ★ 标记） |
 
-## 成长与存档（Roguelite）
-
-| 项 | 规则 |
-|---|---|
-| 玩家攻击力 | `4 + 等级 × 2` |
-| 敌人 HP | `30 + (等级-1) × 8 + rand(16)` |
-| 稀有度 | 随等级小幅提升出金概率（每级 +1%，上限 +12%）|
-| 经验 | 击败获得 `8 + 敌人最大 HP`；升级所需经验 `20 + (等级-1) × 15`，可连续升级 |
-| 武器掉落 | 每次击败必掉 1 把武器（纯收集，不影响数值）：普通 70% / 稀有 22% / 史诗 7% / 传说 1%，连续 40 次未出史诗以上触发保底 |
-| 存档 | `${CODEBUDDY_PLUGIN_DATA}/save.json`（默认 `~/.codebuddy/plugins/data/nibble/save.json`），含 `arsenal` 武器库字段 |
-| 落盘时机 | 每次攻击后、`SessionStart`、`SessionEnd` |
+命令：`Nibble: 攻击一次`、`Nibble: 打开武器库`、`Nibble: 重置进度`。
 
 ## 隐私
 
-**CodeBuddy 插件（hooks）**
+**不读**你的代码、提示词、文件路径或文件内容。只在你**每天第一次打开编辑器**时发送 2 个字段——
+**匿名 ID（本机随机生成）+ 版本号**；可在设置中一键关闭，上报失败一律静默忽略。
 
-- `UserPromptSubmit` hook **只把 stdin 排空**，**从不解析** `prompt` / 文件 / 路径 / 代码内容，只按节拍推进战斗。
-- 战斗日志走顶层 `systemMessage`（CodeBuddy 官方定义：**只显示给用户，不传给 Agent**）+ `suppressOutput: true`，
-  因此**不会进入模型上下文、不消耗 token**。
-- **插件本身不发起任何网络请求**、不挂 MCP、不读你的项目文件。
+## 支持作者
 
-**IDE 扩展（`vscode-extension/`）**
+如果这只小狗陪你写过几行代码，欢迎请拾玖吃根肉干 🦴
 
-- 扩展唯一联网的地方是**匿名激活统计**：只发送「本机随机匿名 ID + 扩展版本号」两个字段，
-  每台机器每天最多 1 次；**不发送**代码/文件/路径/项目名/提问内容/账号/机器名，服务端不保存 IP。
-- 自添加该统计的版本起，已在扩展的 `CHANGELOG.md` 与 README「隐私」里公开说明，
-  并提供 `nibble.telemetry=false` 开关与命令 `Nibble: 关于匿名统计（发什么 / 如何关闭）`；
-  关闭后扩展不再发出任何请求。接收端即本仓库的 [`telemetry-worker/`](telemetry-worker/)（源码公开，可自行审阅/自建）。
+<p><img src="docs/wechat-qr.png" width="220" alt="微信赞赏码"></p>
 
-## 前置条件
+<sub>打赏纯属自愿。所有玩法（升级、武器库、收集）都是免费的，不影响任何功能。</sub>
 
-- **Node.js ≥ 16**（本机为 `C:\nvm4w\nodejs\node.exe` v16.20.2，已实测通过）。
-- **Windows 需安装 Git for Windows**：CodeBuddy 的 hook 在 Windows 上**强制用 Git Bash 执行**（不支持 cmd/PowerShell）。
-  本机已安装（`C:\Program Files\Git`）。
+## 更多
 
-## IDE 扩展（常驻 UI，推荐）
-
-`vscode-extension/` 是一个**标准 VS Code 扩展**，把像素小生物做成**常驻 UI**（底部面板 + 状态栏），
-在 CodeBuddy / VS Code 里都可用。扩展只负责**显示**，战斗推进由本仓库的 CodeBuddy 插件（hooks）驱动。
-
-| 命令 | 说明 |
+| 想看什么 | 去哪 |
 |---|---|
-| `Nibble: 显示像素小生物（底部面板）` | 展开底部停靠视图 |
-| `Nibble: 攻击一次` | 手动推进一次 |
-| `Nibble: 在编辑器标签页中打开` | 放大查看完整 24×24 |
-| `Nibble: 打开武器库` | 打开武器库图鉴（80 格收集网格 + 进度条） |
-| `Nibble: 重置等级/经验/战绩` | 清空进度 |
-| `Nibble: 显示/隐藏状态栏小生物` | 切换状态栏 |
-| `Nibble: 关于匿名统计（发什么 / 如何关闭）` | 查看/关闭匿名激活统计、重置匿名 ID |
+| 怎么发版：改版本号 → 打 tag → CI 自动上架 | [`PUBLISHING.md`](PUBLISHING.md) |
+| 玩法升级规划：武器库 / 装备 / 进化 / 收集设计 | [`docs/游戏升级规划/`](docs/游戏升级规划/) |
+| 素材来源与版权（含拾玖照片的许可口径） | [`legacy-mods/CREDITS.md`](legacy-mods/CREDITS.md) |
 
-**面板功能**：`⚔ 战斗 / 🎒 武器库` 双标签页；小生物手边实时展示最近获得的武器；击败掉落时弹**战利品 toast**（稀有度色边框，史诗以上震动、传说金光）；武器库页为 80 格收集图鉴（未收集为暗剪影+「?」，已收集带稀有度边框与 ×N 角标）。
-
-| 设置 | 默认 | 说明 |
-|---|---|---|
-| `nibble.triggerMode` | `hook` | `hook`（配套 hooks 提问即攻击）/ `onSave`（保存文件即攻击）/ `manual` |
-| `nibble.statusBar` | `true` | 状态栏显示小生物 |
-| `nibble.autoOpenPanel` | `true` | 启动时自动展开底部面板 |
-| `nibble.tickMs` | `400` | 刷新间隔（毫秒） |
-| `nibble.telemetry` | `true` | 匿名激活统计（仅匿名 ID + 版本号，每天最多 1 次）；关闭后扩展不再联网 |
-
-只装扩展、不装插件时，把 `triggerMode` 设为 `onSave` 即可独立使用。
-
-## 仓库结构
-
-```
-nibble-cb/                          ← 本仓库根目录（同时是 CodeBuddy 本地市场根目录）
-├── .codebuddy-plugin/marketplace.json # CodeBuddy 本地市场清单
-├── plugins/nibble/                 # CodeBuddy 插件：hooks 驱动战斗 / 命令 / 素材源
-├── mcp/server.js                      # MCP 服务器（可选通道，在对话里看战场卡片）
-├── vscode-extension/                  # VS Code / CodeBuddy 扩展（常驻 UI）
-│   ├── lib/                           # 构建产物：素材 + 渲染副本（不入库，npm run sync 生成）
-│   ├── telemetry.js                   # 匿名激活统计（扩展唯一的联网点，可关闭）
-│   ├── CHANGELOG.md                   # 更新日志（会展示在扩展市场页）
-│   └── icon.png                       # 128×128 图标
-├── telemetry-worker/                  # 统计接收端：Cloudflare Workers + KV（源码公开，可自建）
-├── tools/                             # 构建脚本（同步 / 打包 / 图标 / 自检 / 本地安装 / 预览）
-├── dist/                              # 打包产物 nibble-<version>.vsix
-└── .github/workflows/release.yml      # 打 tag 自动打包并发布
-```
-
-## 打包与发布
-
-> 📘 **完整流程（改功能 → 升版本 → 打 tag → 自动上架）见 [`PUBLISHING.md`](PUBLISHING.md)**，下面是速查。
-
-```bash
-npm test                  # 扩展自检（stub 跑 activate / tick / webview）
-npm run sync              # 把 hooks 源文件同步进扩展 lib/（改了那两个 JS 才需要）
-npm run package:official  # 官方 vsce 打包（需 Node ≥ 20）→ dist/nibble-<version>.vsix ← 发布用这个
-npm run package           # 离线兜底打包（Node 16 可用）→ dist/nibble-<version>-offline.vsix
-npm run install-local     # 装进本机 IDE 扩展目录（开发中预览，会自动清扫描缓存）
-```
-
-> ⚠️ **发布必须用 `npm run package:official`**。自写的离线打包器（`tools/make-vsix.js`）体积小、不联网，
-> 但它早期版本生成的 `extension.vsixmanifest` 缺了 Open VSX 必需的 `Assets`（`Icons.Default` /
-> `Content.Details` / `Content.License`）与 `<Icon>`/`<Categories>`，服务端会直接以 **406 Not Acceptable** 拒绝发布。
-> 现已补全，但正式发布仍建议走官方 vsce。
->
-> 若本机默认 Node < 20，可指定 Node 22 对应的可执行文件：
-> ```bash
-> VSCE_NODE="C:/Users/<you>/.workbuddy/binaries/node/versions/22.22.2-3/npx.cmd" npm run package:official
-> ```
-
-**本地安装**：`npm run install-local`（推荐，全自动：解析真实扩展目录 + 登记 + 清扫描缓存），
-或 `Ctrl+Shift+P` → `Extensions: Install from VSIX...`。
-
-**发布到 Open VSX**（CodeBuddy 的扩展市场就是 open-vsx.org，发完在 IDE 里搜 "Nibble" 即可安装）：
-
-```bash
-# 一次性准备（本项目已完成）：
-#   1. open-vsx.org 用 GitHub 登录
-#   2. 注册 accounts.eclipse.org（表单里的 GitHub Username 必须与上面那个 GitHub 账号一致）
-#   3. open-vsx.org → Settings → Log in with Eclipse → 签署 Publisher Agreement
-#   4. open-vsx.org → Settings → Access Tokens → 生成 token（关掉就看不到，立刻保存）
-# 命名空间 nibble 已创建，无需再 create-namespace
-node tools/set-repository.js LMLuo/nibble                     # CI 会自动做，手动发需自己注入
-npx --yes ovsx@1 publish dist/nibble-<version>.vsix -p <token>
-```
-
-> ⚠️ **ovsx 1.x 要求 Node ≥ 22**。若本机默认 Node 较低（如 16），`npx` 会去装旧版 ovsx，
-> 而旧版依赖需要编译的原生模块 `keytar`（要 Visual Studio C++ 工具链）→ 报 `gyp ERR! find VS`。
-> 解决：切到 Node 22，或显式指定该 Node 的 npx；并清掉坏缓存 `npm cache clean --force`。
-> `ovsx` 报 **406 Not Acceptable** 通常意味着 VSIX 缺少 Open VSX 必需资源，用 `npm run package:official` 重打即可。
-
-**自动发布（推荐）**：仓库 Secrets 里**已配好** `OVSX_PAT`（可选再加 `VSCE_PAT` 以同时发微软市场），只需打 tag：
-
-```bash
-git tag v0.1.2 && git push origin v0.1.2
-```
-
-工作流会依次：校验 tag 与 `vscode-extension/package.json` 版本一致 → 注入 `repository` → 扩展自检 → 插件冒烟测试 →
-同步 `lib/` → 官方 vsce 打包 → **发布 Open VSX** → 创建带 vsix 附件的 GitHub Release。
-
-## 已知限制
-
-- 底部面板高度有限：拖大分隔条，或用 `在编辑器标签页中打开` 看完整 24×24 大图。
-- `triggerMode: hook` 需要配套的 CodeBuddy 插件（本仓库 `plugins/nibble`）才能"提问即攻击"；只装扩展请用 `onSave`。
-- 扩展**不读取**你的代码、提示词或文件内容，只读自己那份游戏存档。
-
-## 素材与版权
-
-像素素材源图见 `legacy-mods/assets/`，由 `legacy-mods/tools/png2grid.mjs` 转成 24×24 网格后内联到
-`plugins/nibble/hooks/pixels.js`。其中 **3 张敌人素材（蝙蝠 / 史莱姆 / 宝箱怪）为 AI 生成的原创像素画（CC0）**；
-**玩家小生物自 2026-10-10 起替换为作者自摄小狗照片手工像素化的形象**（源照片与许可口径见 `legacy-mods/CREDITS.md`）。
-**未复制任何第三方素材**。
-
-### 设计灵感来源
-
-本项目的设计灵感来自 [Spinlings](https://spinlings.dev/)（[416rehman/spinlings](https://github.com/416rehman/spinlings)，
-一个跑在 Claude Code 里的生物卡牌游戏）：我们参照了它的视觉语言（深色底、青色玩家、橙色野生、红色攻击状态色）
-以及"随 AI 工作节奏推进"的交互思路。
-
-但本项目**名称、代码与像素素材全部独立**，未使用其任何素材或代码。这也是改名为 **Nibble** 的原因——
-避免与上游项目重名。
+设计灵感来自 [Spinlings](https://spinlings.dev/)（视觉语言与"随 AI 工作节奏推进"的交互思路）；本项目名称、代码与素材均为独立创作。
