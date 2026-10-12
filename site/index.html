@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nibble · 住在编辑器里的像素小狗（提问即攻击）</title>
+<meta name="description" content="一只像素小狗住在 CodeBuddy / VS Code 的状态栏和底部面板里。你每提一次问，它就替你打一只怪——升级、掉武器、收图鉴，进度跨会话保存。">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0D0F14">
+<link rel="icon" href="favicon.svg">
+<!--
+  site/index.html —— Nibble 官网（单页静态站，纯 HTML/CSS/JS，无框架无构建链）
+  这个文件里的 {{...}} 是构建期占位符，由 tools/build-site.js 用仓库真数据填充：
+    {{ENEMY_WALL}}   40 只怪物的名单（按小怪/精英/头目分组，取自 enemies.js + enemies-stories.js）
+    {{BUG_QUOTES}}   三段 Bug 纪要原文
+    {{ENEMY_STATS}}  三档数量与难度倍率
+    {{RARITY_TABLE}} 四档稀有度的数量 / 掉落率 / 战力
+    {{VERSION}} {{ENEMY_TOTAL}} {{WEAPON_TOTAL}} {{PITY_LIMIT}} {{DROP_ODDS}} {{POWER_ODDS}} {{BUILD_DATE}}
+  所以改完文案请跑 `npm run site`（= node tools/build-site.js --serve）生成 _site/ 再预览。
+  本页不做数据收集：不引任何第三方脚本、不引外部字体，只有下方的 QR 图是本地文件。
+-->
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<a class="skip" href="#demo">跳到演示</a>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="#top" aria-label="Nibble 首页">
+      <span class="pt pt-logo" data-pt="NIBBLE">NIBBLE</span>
+    </a>
+    <nav class="nav" aria-label="页面导航">
+      <a href="#demo">演示</a>
+      <a href="#how">怎么玩</a>
+      <a href="#bugs">怪物</a>
+      <a href="#look">界面</a>
+      <a href="#shijiu">拾玖</a>
+      <a href="#install">安装</a>
+      <a href="#privacy">隐私</a>
+    </nav>
+    <div class="top-acts">
+      <a class="mini" href="https://github.com/LMLuo/nibble" rel="noopener">GitHub</a>
+      <a class="mini mini-core" href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ============================ 首屏 ============================ -->
+  <section class="hero">
+    <!-- 像素天空场景：全部由 site.js 用 SVG 现画（星/代码塔/山脊/丘陵/草）+ CSS 硬边色带，
+         单位 = 1 CSS px 天然像素对齐，不需要任何图片素材 -->
+    <div class="scene" id="scene" aria-hidden="true"></div>
+    <div class="wrap hero-in">
+      <p class="kicker"><span class="pt pt-sm" data-pt="PIXELPET">PIXEL PET</span><span class="blink">●</span> 运行中</p>
+      <h1>提问<span class="hl">即</span>攻击</h1>
+      <p class="lede">一只像素小狗，住在 <b>CodeBuddy / VS Code</b> 的状态栏和底部面板里。你每问一句 AI（或保存一次文件），它就替你打一只怪——升级、掉武器、收图鉴，进度跨会话保存。</p>
+      <ul class="chips">
+        <li>常驻底部面板</li>
+        <li>自动待机动画</li>
+        <li>零 token</li>
+        <li>存档只在本机</li>
+      </ul>
+      <div class="cta">
+        <a class="btn" href="#install">装到编辑器</a>
+        <a class="btn btn-ghost" href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX 市场</a>
+      </div>
+
+      <!-- 活的演示：跑的就是扩展本体那份渲染器（pet.js）+ 真数据（demo-data.js，构建期由 nibble.js 导出）
+           页面在这里扮演"扩展宿主"，通过 postMessage 与 pet.js 走与 IDE 里完全相同的协议。 -->
+      <div class="ide" id="demo">
+        <div class="ide-top">
+          <span class="led led-r"></span><span class="led led-y"></span><span class="led led-g"></span>
+          <span class="ide-title">Nibble · 底部面板</span>
+          <span class="ide-note" id="demoNote"></span>
+        </div>
+        <div class="tabs" role="tablist">
+          <button type="button" id="tabBattle" class="tab active">⚔ 战斗</button>
+          <button type="button" id="tabArsenal" class="tab">🎒 武器库</button>
+          <button type="button" id="tabBestiary" class="tab">📖 怪物库</button>
+        </div>
+        <div class="panel">
+          <div id="battleView">
+            <div class="stage">
+              <canvas id="player" width="24" height="24" aria-label="Nibble 像素小狗（拾玖）"></canvas>
+              <div class="slotWrap">
+                <button type="button" class="slot empty" id="slot" title="点击去武器库选择武器">
+                  <canvas id="weapon" width="24" height="24"></canvas>
+                  <span class="ph">?</span>
+                </button>
+                <span class="slotName" id="slotName">未装备</span>
+              </div>
+              <svg class="vs" width="28" height="28" viewBox="0 0 14 14" shape-rendering="crispEdges" aria-hidden="true">
+                <g fill="#FF6B6B">
+                  <rect x="1" y="1" width="2" height="2"/><rect x="3" y="3" width="2" height="2"/><rect x="5" y="5" width="2" height="2"/>
+                  <rect x="7" y="7" width="2" height="2"/><rect x="9" y="9" width="2" height="2"/><rect x="11" y="11" width="2" height="2"/>
+                  <rect x="11" y="1" width="2" height="2"/><rect x="9" y="3" width="2" height="2"/><rect x="7" y="5" width="2" height="2"/>
+                  <rect x="5" y="7" width="2" height="2"/><rect x="3" y="9" width="2" height="2"/><rect x="1" y="11" width="2" height="2"/>
+                </g>
+              </svg>
+              <canvas id="enemy" width="24" height="24" aria-label="当前怪物"></canvas>
+              <span class="ground" aria-hidden="true"></span>
+            </div>
+            <div class="info">
+              <div class="meta">
+                <span class="lv" id="lv">Lv 1</span>
+                <span class="hp"><i id="hpbar"></i></span>
+                <span class="hpnum" id="hpnum">--/--</span>
+                <span class="ename" id="ename">—</span>
+                <span class="wpn" id="atk"></span>
+                <span class="wpn" id="wpn"></span>
+              </div>
+              <div class="log" id="log">Nibble 待命中…</div>
+              <div class="foot">
+                <button type="button" id="attack" class="btn btn-sm">攻击一次</button>
+                <span class="tip">在 IDE 里，你每提一次问 = 点一次这个按钮</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="arsenalView" class="hidden">
+            <div class="abar" id="abar"><span><i></i></span><span><i></i></span><span><i></i></span><span><i></i></span></div>
+            <div class="alegend" id="alegend"></div>
+            <div class="adetail" id="adetail">
+              <canvas id="adetailIcon" width="24" height="24"></canvas>
+              <div class="atext">
+                <div class="aname" id="adetailName">—</div>
+                <div class="astory" id="adetailStory">点选下方格子，查看这把武器的故事</div>
+              </div>
+              <div class="abtns" id="adetailBtns">
+                <button type="button" id="aEquip" class="hidden">装备此武器</button>
+                <button type="button" id="aAuto" class="hidden">跟随最近获得</button>
+              </div>
+            </div>
+            <div id="agroups"></div>
+          </div>
+
+          <div id="bestiaryView" class="hidden">
+            <div class="abar" id="bbar"><span><i></i></span><span><i></i></span><span><i></i></span></div>
+            <div class="alegend" id="blegend"></div>
+            <div class="adetail" id="bdetail">
+              <canvas id="bdetailIcon" width="24" height="24"></canvas>
+              <div class="atext">
+                <div class="aname" id="bdetailName">—</div>
+                <div class="astory" id="bdetailStory">点选下方格子，查看这只怪物的「Bug 纪要」</div>
+              </div>
+            </div>
+            <div id="bgroups"></div>
+          </div>
+        </div>
+        <div id="toast"><canvas id="toastIcon" width="24" height="24"></canvas><span id="toastText"></span></div>
+      </div>
+      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，或切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴。</p>
+      <noscript><p class="demo-hint warn">这个演示需要 JavaScript；不开也能看到下面所有介绍。</p></noscript>
+
+      <!-- 记忆点：把你今天遇到的 Bug 丢给它（在浏览器里现算，不上传、不联网） -->
+      <div class="bugdrop" id="bugdrop">
+        <div class="bugbar">
+          <span class="bar-p" aria-hidden="true">›</span>
+          <input id="bugin" type="text" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="go"
+                 placeholder="把你今天遇到的 Bug 贴进来，看看它是哪一只：undefined is not a function…"
+                 aria-label="把你今天遇到的 Bug 贴进来，看看它是哪一只">
+          <button type="button" class="btn btn-sm" id="buggo">丢给它</button>
+        </div>
+        <p class="bug-hint">纯在浏览器里现算：<b>不上传、不联网、不写存档</b>，你贴的这句话只留在自己机器上。只有你自己点「复制分享链接」时，它才会进 URL。</p>
+        <div class="bugcard hidden" id="bugcard" aria-live="polite">
+          <div class="bc-head">
+            <span class="bc-art" id="bcArt"></span>
+            <div>
+              <p class="bc-name" id="bcName">—</p>
+              <p class="bc-sub" id="bcSub">—</p>
+            </div>
+          </div>
+          <ul class="bc-rep" id="bcRep"></ul>
+          <div class="bc-acts">
+            <button type="button" class="btn btn-sm" id="bcGo">↑ 去看拾玖打它</button>
+            <button type="button" class="btn btn-sm btn-ghost copy" id="bcCopy" data-copy="">复制分享链接</button>
+            <span class="bc-tip" id="bcTip"></span>
+          </div>
+        </div>
+        <p class="bug-ex" id="bugEx"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 怎么玩 ============================ -->
+  <section id="how" class="sec">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="HOWITWORKS">HOW IT WORKS</span></p>
+      <h2>它是怎么打怪的</h2>
+      <div class="typebar" id="typebar">
+        <span class="gt2" aria-hidden="true">›</span>
+        <code>if (prompt) nibble.attack()</code>
+        <span class="cmt">// 你说一句，它打一下</span>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <span class="num">1</span>
+          <h3>你提问</h3>
+          <p>在 CodeBuddy 里提问、或保存一次文件 → 触发一次攻击。触发方式可切：<code>nibble.triggerMode</code> 支持 <code>hook</code>（提问即攻击，默认）/ <code>onSave</code>（保存即攻击）/ <code>manual</code>（只点按钮）。</p>
+        </article>
+        <article class="card">
+          <span class="num">2</span>
+          <h3>它出手</h3>
+          <p>小狗前冲、怪物掉血。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂；遭遇即自动收录进「📖 怪物库」。</p>
+        </article>
+        <article class="card">
+          <span class="num">3</span>
+          <h3>击败就掉武器</h3>
+          <p>击败必掉 1 把武器（{{DROP_ODDS}}，{{PITY_LIMIT}} 次保底）。<b>{{WEAPON_TOTAL}} 把</b>各有独立像素图与一段小故事。</p>
+        </article>
+        <article class="card">
+          <span class="num">4</span>
+          <h3>武器真有用</h3>
+          <p>每把武器提供战力加成：{{POWER_ODDS}}。不手动装也会自动取已拥有里最强的那把，也可以在图鉴里固定携带（★ 标记）。</p>
+        </article>
+      </div>
+      <p class="fine">战斗数值全在本地算：<b>不调用任何模型 API、不多花你一分钱（零 token）</b>，存档写在 <code>~/.codebuddy/plugins/data/nibble/save.json</code>，跨会话、跨窗口都接着打。</p>
+    </div>
+  </section>
+
+  <!-- ============================ 40 只 Bug 怪物 ============================ -->
+  <section id="bugs" class="sec sec-soil">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="BUGS">BUGS</span></p>
+      <h2>{{ENEMY_TOTAL}} 只怪物，全是真 Bug</h2>
+      <p class="lede">名字不是编的：空指针、竞态、TODO、技术债……每一个都是你真的踩过的坑。难度分三档，等级越高，越容易碰上硬骨头。</p>
+      <div class="stats">{{ENEMY_STATS}}</div>
+      <div class="quotes">{{BUG_QUOTES}}</div>
+      <h3 class="wall-title">完整名单（{{ENEMY_TOTAL}} 只）</h3>
+      <p class="fine">鼠标停在任何一只身上，可以看到它的机制。带故事的完整图鉴就在上面的演示里——点「📖 怪物库」。</p>
+      <div class="wall-wrap">{{ENEMY_WALL}}</div>
+    </div>
+  </section>
+
+  <!-- ============================ 界面 ============================ -->
+  <section id="look" class="sec">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="SCREENS">SCREENS</span></p>
+      <h2>它长什么样</h2>
+      <div class="shots">
+        <figure class="shot">
+          <img src="panel-preview.png" width="880" height="295" alt="Nibble 战斗面板：像素小狗、装备槽、怪物、血条与战斗日志" loading="lazy">
+          <figcaption><b>⚔ 战斗</b>：小狗 + 装备槽 + 怪物 + 血条 + 战斗日志，一滴水都不占你屏幕。</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="bestiary-preview.png" width="900" height="435" alt="Nibble 怪物库：40 只怪物按小怪/精英/头目分组的图鉴" loading="lazy">
+          <figcaption><b>📖 怪物库</b>：遭遇点亮灰调、击败点亮彩色，点开读它的「Bug 纪要」。</figcaption>
+        </figure>
+      </div>
+      <h3 class="wall-title">🎒 武器库：{{WEAPON_TOTAL}} 把，四档稀有度</h3>
+      <ul class="rarity">{{RARITY_TABLE}}</ul>
+    </div>
+  </section>
+
+  <!-- ============================ 拾玖 ============================ -->
+  <section id="shijiu" class="sec sec-soil">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="SHIJIU">SHIJIU</span></p>
+      <h2>它是谁：我的狗「拾玖」</h2>
+      <div class="who">
+        <div class="who-text">
+          <p>游戏里这只像素小狗，是照着我家的狗画的——<b>约克夏串串</b>，名字叫 <b>拾玖</b>。</p>
+          <p>把它的照片手工点成 <b>24×24 像素</b>（11 色），就成了游戏里的样子。它平时陪我写代码，现在也顺便帮你打工。</p>
+        </div>
+        <div class="who-pics">
+          <figure class="pic pic-pixel">
+            <img src="player-pixel.png" width="140" height="140" alt="Nibble 像素小狗（拾玖的 24×24 像素形象）">
+            <figcaption>24×24 · 11 色</figcaption>
+          </figure>
+          <figure class="pic pic-photo">
+            <img src="dog-shijiu.jpg" width="300" height="300" alt="拾玖的照片（约克夏串串）" loading="lazy">
+            <figcaption>本人（拾玖）</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 安装 ============================ -->
+  <section id="install" class="sec">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="INSTALL">INSTALL</span></p>
+      <h2>装到编辑器</h2>
+
+      <div class="install-grid">
+        <article class="card card-strong">
+          <h3>方式 1 · 装扩展<span class="tag">推荐，开箱可用</span></h3>
+          <p>在 <a href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX 市场</a> 搜索 <b>Nibble</b> 安装，或命令面板执行：</p>
+          <div class="cmds">
+            <div class="cmd">
+              <code>Extensions: Install from VSIX...</code>
+              <button type="button" class="copy" data-copy="Extensions: Install from VSIX...">复制</button>
+            </div>
+          </div>
+          <p>默认<b>保存文件即攻击</b>，不需要其他依赖；装完状态栏就会出现它。</p>
+        </article>
+
+        <article class="card">
+          <h3>方式 2 · 装插件 → 提问即攻击<span class="tag">默认玩法</span></h3>
+          <div class="term">
+            <div class="term-top">
+              <span class="led led-r"></span><span class="led led-y"></span><span class="led led-g"></span>
+              <span class="term-title">CodeBuddy · 终端</span>
+            </div>
+            <div class="cmds" id="cmds">
+              <div class="cmd">
+                <code>/plugin marketplace add "&lt;本仓库目录&gt;"</code>
+                <button type="button" class="copy" data-copy="/plugin marketplace add &quot;&lt;本仓库目录&gt;&quot;">复制</button>
+              </div>
+              <div class="cmd">
+                <code>/plugin install nibble@nibble-cb</code>
+                <button type="button" class="copy" data-copy="/plugin install nibble@nibble-cb">复制</button>
+              </div>
+              <div class="cmd">
+                <code>/reload-plugins</code>
+                <button type="button" class="copy" data-copy="/reload-plugins">复制</button>
+              </div>
+              <div class="cmd">
+                <code>/nibble:nibble-setup</code>
+                <button type="button" class="copy" data-copy="/nibble:nibble-setup">复制</button>
+              </div>
+              <div class="cmd promptline">
+                <code></code><span class="caret" aria-hidden="true"></span>
+              </div>
+            </div>
+          </div>
+          <p class="fine">需要 <b>Node ≥ 16</b>；Windows 下 CodeBuddy 的 hooks 走 Git Bash，故需安装 <a href="https://git-scm.com/download/win" rel="noopener">Git for Windows</a>。</p>
+        </article>
+      </div>
+
+      <h3 class="wall-title">常用的几条</h3>
+      <ul class="plain">
+        <li><code>Nibble: 显示像素小生物（底部面板）</code></li>
+        <li><code>Nibble: 攻击一次</code></li>
+        <li><code>Nibble: 打开武器库</code> / <code>Nibble: 打开怪物库</code></li>
+        <li><code>Nibble: 重置等级 / 经验 / 战绩</code></li>
+        <li><code>Nibble: 关于匿名统计（发什么 / 如何关闭）</code></li>
+      </ul>
+
+      <p class="fine">设置项：<code>nibble.triggerMode</code>、<code>nibble.statusBar</code>、<code>nibble.tickMs</code>、<code>nibble.telemetry</code>。<br>
+      当前版本 <b>v{{VERSION}}</b>（本页由 <code>site/</code> 构建于 {{BUILD_DATE}}）。</p>
+    </div>
+  </section>
+
+  <!-- ============================ 隐私 ============================ -->
+  <section id="privacy" class="sec sec-night">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="PRIVACY">PRIVACY</span></p>
+      <h2>隐私：不读你的代码</h2>
+      <p class="lede"><b>不读</b>你的代码、提示词、文件路径或文件内容。只在你<b>每天第一次打开编辑器</b>时发送 2 个字段——<b>匿名 ID（本机随机生成）+ 版本号</b>；可在设置中一键关闭，上报失败一律静默忽略。</p>
+      <div class="off">
+        <h3>想彻底关掉，三种方式任选</h3>
+        <ul class="plain">
+          <li>设置里关：<code>nibble.telemetry</code> = <code>false</code></li>
+          <li>环境变量：<code>NIBBLE_NO_TELEMETRY=1</code></li>
+          <li>关闭 IDE 自身的遥测开关（插件会跟随）</li>
+        </ul>
+      </div>
+      <p class="fine">玩法完全在本地：怪物数值、掉落、存档都不联网。唯一的联网点是这一次匿名统计。</p>
+    </div>
+  </section>
+
+  <!-- ============================ 打赏 ============================ -->
+  <section id="support" class="sec">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="SUPPORT">SUPPORT</span></p>
+      <h2>请拾玖吃根肉干 🦴</h2>
+      <div class="support">
+        <img class="qr" src="wechat-qr.png" width="220" height="298" alt="微信赞赏码" loading="lazy">
+        <div>
+          <p>如果这只小狗陪你写过几行代码，欢迎请拾玖吃根肉干。</p>
+          <p class="fine">打赏纯属自愿。所有玩法（升级、武器库、收集）都是免费的，不影响任何功能。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="page-foot">
+  <!-- 营地：拾玖在篝火旁睡着了（火焰 3 帧 + 火星 + zzz，全部由 site.js 绘制） -->
+  <div class="camp" id="camp" aria-hidden="true"></div>
+  <div class="wrap foot-in">
+    <div class="foot-links">
+      <a href="https://github.com/LMLuo/nibble" rel="noopener">GitHub 源码</a>
+      <a href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX</a>
+      <a href="https://github.com/LMLuo/nibble/blob/main/legacy-mods/CREDITS.md" rel="noopener">素材与版权</a>
+      <a href="#privacy">隐私</a>
+    </div>
+    <p class="foot-note">
+      设计灵感来自 <a href="https://spinlings.dev/" rel="noopener">Spinlings</a>（视觉语言与「随 AI 工作节奏推进」的交互思路）；本项目名称、代码与素材均为独立创作。<br>
+      MIT License · 本页像素素材与数值直接取自扩展本体，构建于 {{BUILD_DATE}}。<br>
+      像素字体：<a href="https://github.com/TakWolf/ark-pixel-font" rel="noopener">方舟像素字体 Ark Pixel Font</a>（<a href="fonts/OFL.txt">OFL-1.1</a>，本站按页面上出现的字符做了子集化）。
+    </p>
+  </div>
+</footer>
+
+<script src="demo-data.js"></script>
+<script src="site.js"></script>
+<script src="pet.js"></script>
+</body>
+</html>

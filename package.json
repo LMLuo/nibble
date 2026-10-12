@@ -14,10 +14,15 @@
     "enable-mcp": "node tools/enable-mcp.js",
     "preview": "node tools/preview-server.js",
     "preview:html": "node tools/make-preview.js",
+    "site": "node tools/build-site.js --serve",
+    "site:build": "node tools/build-site.js",
+    "site:check": "node tools/check-site.mjs",
+    "font": "node tools/make-pixel-font.js",
     "sprites:monsters": "node tools/monsters-sprites.mjs",
     "balance:sim": "node tools/balance-sim.js"
   },
   "devDependencies": {
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "subset-font": "^2.9.0"
   }
 }

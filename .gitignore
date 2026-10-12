@@ -13,6 +13,13 @@ vscode-extension/icon-src/
 # 本地预览产物
 vscode-extension/media/preview.html
 
+# 官网构建产物：由 tools/build-site.js 从 site/ + plugins/nibble/hooks/ + vscode-extension/media/ 组装
+_site/
+
+# 像素字体的官方原始包（3.8MB/个，可再从 release 下载）；
+# 子集化产物 site/fonts/*.woff2 与 LICENSE(OFL.txt) 要入库，官网直接引用
+site/fonts/src/
+
 # 武器/怪物素材：真源是 sheets/（AI 原图，不可再生），cells/ 由 tools/*-sprites.mjs 切出
 legacy-mods/assets/weapons/cells/
 legacy-mods/assets/monsters/cells/

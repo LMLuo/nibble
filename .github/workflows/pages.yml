@@ -1,0 +1,51 @@
+# 把官网（site/）发布到 GitHub Pages。
+# 产物由 tools/build-site.js 组装（site/ + 扩展的 pet.js/截图 + 由 nibble.js 导出的 demo-data.js），
+# 不依赖 legacy-mods/，也不提交任何构建产物。
+#
+# 首次启用：仓库 Settings → Pages → Build and deployment → Source 选 “GitHub Actions”。
+# 发布地址：https://lmluo.github.io/nibble/（绑自有域名时在 Pages 里填 Custom domain）
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'tools/build-site.js'
+      - 'plugins/nibble/hooks/**'
+      - 'vscode-extension/media/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 组装静态站
+        run: node tools/build-site.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
