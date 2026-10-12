@@ -17,6 +17,8 @@
   let view = 'battle'
   let arsenal = null // { owned, pity, pityLimit, list, sprites }
   let selectedId = null // 武器库中当前选中的武器（详情卡展示它的故事）
+  let bestiary = null // { seen, defeated, list, sprites } 怪物库（遭遇 → 击败双状态）
+  let selectedEnemyId = null // 怪物库中当前选中的怪物
 
   // 把 24x24 的扁平颜色数组画到 canvas 上（'' 表示透空）
   function drawSprite(canvas, flatGrid, shiftX, shiftY, hidden) {
@@ -78,21 +80,31 @@
     // 装备槽：单独格子展示当前携带的武器（已装备 → 否则跟随最近获得）
     if (canvasW) {
       const has = !!state.weaponSprite
+      const power = state.weaponPower || 0
       const slot = $('slot')
       if (slot) {
         slot.classList.toggle('empty', !has)
         slot.style.borderColor = has ? state.weaponColor || 'var(--line)' : ''
         slot.style.boxShadow = has ? '0 0 10px ' + rgba(state.weaponColor, 0.35) : 'none'
         slot.title = has
-          ? state.weaponName + '（' + (RARITY_LABEL[state.weaponRarity] || '') + '）· 点击更换武器'
+          ? state.weaponName + '（' + (RARITY_LABEL[state.weaponRarity] || '') + '· 战力 +' + power + '%）· 点击更换武器'
           : '点击去武器库选择武器'
       }
       drawSprite(canvasW, state.weaponSprite, 0, 0, !has)
       const nameEl = $('slotName')
-      if (nameEl) nameEl.textContent = has ? state.weaponName : '未装备'
+      if (nameEl) nameEl.textContent = has ? state.weaponName + ' +' + power + '%' : '未装备'
+    }
+    const atkEl = $('atk')
+    if (atkEl) {
+      const a = (state.arsenal && state.arsenal.atkTotal) || 0
+      atkEl.textContent = a ? '🗡 ' + a : ''
     }
     const wpnEl = $('wpn')
-    if (wpnEl) wpnEl.textContent = state.weaponSprite ? '⚔ ' + state.weaponName : ''
+    if (wpnEl) {
+      wpnEl.textContent = state.weaponSprite
+        ? '⚔ ' + state.weaponName + ' +' + (state.weaponPower || 0) + '%'
+        : ''
+    }
 
     $('lv').textContent = 'Lv ' + state.level
     const ratio = Math.max(0, state.hp) / Math.max(1, state.maxHp)
@@ -101,8 +113,10 @@
     bar.style.background = ratio > 0.5 ? '#4ECDC4' : ratio > 0.25 ? '#FFE066' : '#FF6B6B'
     $('hpnum').textContent = state.hp + '/' + state.maxHp
     const name = $('ename')
-    name.textContent = state.enemyName + '（' + state.rarityLabel + '）'
+    name.textContent =
+      state.enemyName + '（' + (state.enemyTierLabel || '小怪') + '·' + state.rarityLabel + '）'
     name.style.color = state.rarityColor || '#FFB86B'
+    name.title = state.enemyMech || ''
     setLog(state.log)
   }
 
@@ -111,17 +125,20 @@
     render()
   }
 
-  // —— 武器库视图 ——
+  // —— 视图切换：战斗 / 武器库 / 怪物库 ——
   function switchView(v) {
-    view = v === 'arsenal' ? 'arsenal' : 'battle'
-    const b = $('battleView'); const a = $('arsenalView')
-    if (!b || !a) return
+    view = v === 'arsenal' || v === 'bestiary' ? v : 'battle'
+    const b = $('battleView'); const a = $('arsenalView'); const m = $('bestiaryView')
+    if (!b || !a || !m) return
     b.classList.toggle('hidden', view !== 'battle')
     a.classList.toggle('hidden', view !== 'arsenal')
-    const tb = $('tabBattle'); const ta = $('tabArsenal')
+    m.classList.toggle('hidden', view !== 'bestiary')
+    const tb = $('tabBattle'); const ta = $('tabArsenal'); const tm = $('tabBestiary')
     if (tb) tb.classList.toggle('active', view === 'battle')
     if (ta) ta.classList.toggle('active', view === 'arsenal')
+    if (tm) tm.classList.toggle('active', view === 'bestiary')
     if (view === 'arsenal') renderArsenal()
+    if (view === 'bestiary') renderBestiary()
   }
 
   const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary']
@@ -181,6 +198,10 @@
     const uniq = Object.keys(owned).length
     $('alegend').innerHTML =
       '<span class="atotal">⚔ ' + uniq + '/' + arsenal.list.length + '</span>' +
+      (arsenal.atkTotal
+        ? '<span class="achip">🗡 攻击 ' + arsenal.atkTotal +
+          (arsenal.shown ? '（+' + arsenal.shown.power + '%）' : '') + '</span>'
+        : '') +
       RARITY_ORDER.map(
         (r) =>
           '<span class="achip"><i style="background:' + RARITY_TEXT_COLOR[r] + '"></i>' +
@@ -259,7 +280,7 @@
       ctx.fillStyle = '#20263a'
       ctx.fillRect(0, 0, SIZE, SIZE)
       ctx.globalCompositeOperation = 'source-over'
-      nameEl.textContent = '？？？ （' + RARITY_LABEL[w.rarity] + '·未收集）'
+      nameEl.textContent = '？？？ （' + RARITY_LABEL[w.rarity] + '·未收集·战力 +' + (w.power || 0) + '%）'
       nameEl.style.color = 'var(--dim)'
       storyEl.textContent = '还没得到它。它藏在战利品里，多击败几只敌人试试运气吧。'
       if (eqBtn) eqBtn.classList.add('hidden')
@@ -267,9 +288,11 @@
       return
     }
     drawSprite(icon, arsenal.sprites[w.id], 0, 0, false)
-    nameEl.textContent = w.name + '　' + RARITY_LABEL[w.rarity] + (n > 1 ? '　×' + n : '')
+    const isActive = !!(arsenal.shown && arsenal.shown.id === w.id)
+    nameEl.textContent =
+      w.name + '　' + RARITY_LABEL[w.rarity] + '　战力 +' + (w.power || 0) + '%' + (n > 1 ? '　×' + n : '')
     nameEl.style.color = color
-    storyEl.textContent = w.story || '（这把武器还没有故事）'
+    storyEl.textContent = (w.story || '（这把武器还没有故事）') + (isActive ? '　⚡ 当前生效中' : '')
     // 装备按钮：已装备则置灰显示 ✓；装备了别的武器时提供"跟随最近获得"
     const isEquipped = arsenal.equipped === w.id
     if (eqBtn) {
@@ -278,6 +301,151 @@
       eqBtn.disabled = isEquipped
     }
     if (autoBtn) autoBtn.classList.toggle('hidden', !arsenal.equipped)
+  }
+
+  // —— 怪物库视图：遭遇（灰调）→ 击败（彩色）双状态图鉴 ——
+  const TIER_ORDER = ['common', 'elite', 'boss']
+  const TIER_LABEL = { common: '小怪', elite: '精英', boss: '头目' }
+  const TIER_COLOR = { common: '#8FA3B8', elite: '#C08BE0', boss: '#F0A04B' }
+
+  // 暗剪影 / 灰调：在像素形状上叠一层颜色（source-atop 只作用于非透空像素）
+  function grayCover(cv, color) {
+    const ctx = cv.getContext('2d')
+    ctx.globalCompositeOperation = 'source-atop'
+    ctx.fillStyle = color
+    ctx.fillRect(0, 0, SIZE, SIZE)
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
+  function makeBCell(e, seen, n) {
+    const cell = document.createElement('div')
+    cell.className = 'wcell ' + (n > 0 ? 'owned' : seen ? 'seen' : 'locked')
+    cell.dataset.id = e.id
+    if (e.id === selectedEnemyId) cell.classList.add('sel')
+    cell.title = seen
+      ? e.name + (n > 0 ? ' · 击败 ' + n + ' 次' : ' · 已遭遇，尚未击败')
+      : '？？？（未遭遇）'
+    const cv = document.createElement('canvas')
+    cv.width = SIZE
+    cv.height = SIZE
+    drawSprite(cv, bestiary.sprites[e.id], 0, 0, false)
+    if (n > 0) {
+      const dot = document.createElement('span')
+      dot.className = 'dot'
+      dot.style.background = TIER_COLOR[e.tier]
+      cell.appendChild(dot)
+    } else {
+      grayCover(cv, seen ? '#39415a' : '#20263a') // 已遭遇=灰调，未遭遇=更暗
+    }
+    cell.appendChild(cv)
+    if (n > 1) {
+      const badge = document.createElement('span')
+      badge.className = 'cnt'
+      badge.textContent = '×' + n
+      cell.appendChild(badge)
+    }
+    cell.onclick = () => selectEnemy(e.id)
+    return cell
+  }
+
+  function renderBestiary() {
+    if (!bestiary || !bestiary.list) return
+    const seen = bestiary.seen || {}
+    const defeated = bestiary.defeated || {}
+    const counts = { common: 0, elite: 0, boss: 0 }
+    const totals = { common: 0, elite: 0, boss: 0 }
+    const byT = { common: [], elite: [], boss: [] }
+    bestiary.list.forEach((e) => {
+      totals[e.tier] = (totals[e.tier] || 0) + 1
+      if (byT[e.tier]) byT[e.tier].push(e)
+      if (defeated[e.id]) counts[e.tier]++
+    })
+    const seenN = bestiary.list.filter((e) => seen[e.id]).length
+    const defN = bestiary.list.filter((e) => defeated[e.id]).length
+    $('blegend').innerHTML =
+      '<span class="atotal">📖 ' + seenN + '/' + bestiary.list.length + '</span>' +
+      TIER_ORDER.map(
+        (t) =>
+          '<span class="achip"><i style="background:' + TIER_COLOR[t] + '"></i>' +
+          TIER_LABEL[t] + ' ' + counts[t] + '/' + totals[t] + '</span>',
+      ).join('') +
+      '<span class="apity">已击败 ' + defN + '</span>'
+    // 进度条：分段宽度按各 tier 总数比例，填充按击败率
+    const segs = $('bbar').children
+    TIER_ORDER.forEach((t, i) => {
+      const seg = segs[i]
+      if (!seg) return
+      seg.style.flexGrow = String(totals[t] || 1)
+      const fill = seg.firstElementChild
+      fill.style.background = TIER_COLOR[t]
+      fill.style.width = (totals[t] ? Math.round((counts[t] / totals[t]) * 100) : 0) + '%'
+    })
+    // 分组网格：小怪 → 精英 → 头目
+    const wrap = $('bgroups')
+    wrap.textContent = ''
+    TIER_ORDER.forEach((t) => {
+      if (!byT[t] || !byT[t].length) return
+      const group = document.createElement('div')
+      group.className = 'agroup'
+      const head = document.createElement('div')
+      head.className = 'aghead'
+      head.innerHTML =
+        '<i style="background:' + TIER_COLOR[t] + '"></i>' +
+        TIER_LABEL[t] + ' ' + counts[t] + '/' + totals[t]
+      const grid = document.createElement('div')
+      grid.className = 'agrid'
+      byT[t].forEach((e) => grid.appendChild(makeBCell(e, !!seen[e.id], defeated[e.id] || 0)))
+      group.appendChild(head)
+      group.appendChild(grid)
+      wrap.appendChild(group)
+    })
+    renderBDetail()
+  }
+
+  function selectEnemy(id) {
+    selectedEnemyId = id
+    const cells = document.querySelectorAll('#bgroups .wcell')
+    for (let i = 0; i < cells.length; i++) {
+      cells[i].classList.toggle('sel', cells[i].dataset.id === selectedEnemyId)
+    }
+    renderBDetail()
+  }
+
+  // —— 怪物详情卡：像素图 + tier + 遭遇/击败记录 + Bug 故事 ——
+  function renderBDetail() {
+    const el = $('bdetail')
+    if (!el || !bestiary || !bestiary.list) return
+    const e = bestiary.list.filter((x) => x.id === selectedEnemyId)[0] || null
+    const icon = $('bdetailIcon')
+    const nameEl = $('bdetailName')
+    const storyEl = $('bdetailStory')
+    storyEl.style.whiteSpace = 'pre-line'
+    if (!e) {
+      drawSprite(icon, null, 0, 0, true)
+      nameEl.textContent = '—'
+      nameEl.style.color = 'var(--text)'
+      storyEl.textContent = '点选下方格子，查看这只怪物的「Bug 纪要」'
+      el.style.borderColor = 'var(--line)'
+      return
+    }
+    const seen = (bestiary.seen && bestiary.seen[e.id]) || null
+    const n = (bestiary.defeated && bestiary.defeated[e.id]) || 0
+    drawSprite(icon, bestiary.sprites[e.id], 0, 0, false)
+    if (!n) grayCover(icon, seen ? '#39415a' : '#20263a')
+    el.style.borderColor = n ? TIER_COLOR[e.tier] : 'var(--line)'
+    if (!seen) {
+      nameEl.textContent = '？？？　未遭遇'
+      nameEl.style.color = 'var(--dim)'
+      storyEl.textContent = '还没遇到过它。继续向 CodeBuddy 提问，它会自己找上门来。'
+      return
+    }
+    nameEl.textContent =
+      e.name + '　' + (TIER_LABEL[e.tier] || '') + (n ? '　击败 ×' + n : '　尚未击败')
+    nameEl.style.color = n ? TIER_COLOR[e.tier] : 'var(--dim)'
+    const parts = [e.story || '（这只怪物还没有故事）']
+    if (e.mechText) parts.push('【机制】' + e.mechText)
+    parts.push('【记录】遭遇 ×' + (seen.count || 1) + '　击败 ×' + n)
+    storyEl.textContent = parts.join('\n')
   }
 
   // —— 战利品 toast（史诗以上带震动，传说再加金光）——
@@ -307,54 +475,72 @@
     }
   }
 
-  if (hasHost) {
-    window.addEventListener('message', (e) => {
-      const msg = e.data || {}
-      if (msg.type === 'state') applyState(msg)
-      else if (msg.type === 'tick') {
-        tick = msg
-        if (state) {
-          state.hp = msg.hp
-          state.maxHp = msg.maxHp
-          state.level = msg.level
-          state.log = msg.log
-        }
-        render()
-      } else if (msg.type === 'drop') showDrop(msg)
-      else if (msg.type === 'arsenalData') {
-        arsenal = {
-          owned: msg.owned,
-          pity: msg.pity,
-          pityLimit: msg.pityLimit,
-          equipped: msg.equipped || null,
-          shown: msg.shown || null,
-          list: msg.list,
-          sprites: msg.sprites,
-        }
-        if (!selectedId) {
-          // 默认选中：最近获得的那把 → 否则当前携带的 → 否则第一把已收集 → 否则列表第一把
-          const lastId = state && state.arsenal && state.arsenal.last ? state.arsenal.last.id : null
-          const ownedIds = msg.list.filter((w) => msg.owned && msg.owned[w.id]).map((w) => w.id)
-          selectedId =
-            (lastId && msg.owned && msg.owned[lastId] ? lastId : null) ||
-            (msg.shown ? msg.shown.id : null) ||
-            ownedIds[0] ||
-            (msg.list[0] && msg.list[0].id) ||
-            null
-        }
-        if (view === 'arsenal') renderArsenal()
-      } else if (msg.type === 'view') switchView(msg.view)
-    })
-    const btnAttack = $('attack')
-    if (btnAttack) btnAttack.onclick = () => api.postMessage({ type: 'attack' })
-    const btn = $('reset')
-    if (btn) btn.onclick = () => api.postMessage({ type: 'reset' })
-    const btnExpand = $('expand')
-    if (btnExpand) btnExpand.onclick = () => api.postMessage({ type: 'expand' })
+  // —— 宿主消息处理（IDE Webview 与本地预览共用同一套逻辑）——
+  function onMessage(msg) {
+    if (!msg) return
+    if (msg.type === 'state') applyState(msg)
+    else if (msg.type === 'tick') {
+      tick = msg
+      if (state) {
+        state.hp = msg.hp
+        state.maxHp = msg.maxHp
+        state.level = msg.level
+        state.log = msg.log
+      }
+      render()
+    } else if (msg.type === 'drop') showDrop(msg)
+    else if (msg.type === 'arsenalData') {
+      arsenal = {
+        owned: msg.owned,
+        pity: msg.pity,
+        pityLimit: msg.pityLimit,
+        equipped: msg.equipped || null,
+        shown: msg.shown || null,
+        atkBase: msg.atkBase,
+        atkTotal: msg.atkTotal,
+        list: msg.list,
+        sprites: msg.sprites,
+      }
+      if (!selectedId) {
+        // 默认选中：最近获得的那把 → 否则当前携带的 → 否则第一把已收集 → 否则列表第一把
+        const lastId = state && state.arsenal && state.arsenal.last ? state.arsenal.last.id : null
+        const ownedIds = msg.list.filter((w) => msg.owned && msg.owned[w.id]).map((w) => w.id)
+        selectedId =
+          (lastId && msg.owned && msg.owned[lastId] ? lastId : null) ||
+          (msg.shown ? msg.shown.id : null) ||
+          ownedIds[0] ||
+          (msg.list[0] && msg.list[0].id) ||
+          null
+      }
+      if (view === 'arsenal') renderArsenal()
+    } else if (msg.type === 'bestiaryData') {
+      bestiary = {
+        seen: msg.seen || {},
+        defeated: msg.defeated || {},
+        list: msg.list || [],
+        sprites: msg.sprites || {},
+      }
+      if (!selectedEnemyId) {
+        // 默认选中：当前正在战斗的那只 → 否则第一只已遭遇 → 否则列表第一个
+        const cur = msg.current || null
+        const seenIds = (msg.list || []).filter((e) => msg.seen && msg.seen[e.id]).map((e) => e.id)
+        selectedEnemyId =
+          (cur && msg.seen && msg.seen[cur] ? cur : null) ||
+          seenIds[0] ||
+          ((msg.list || [])[0] ? msg.list[0].id : null)
+      }
+      if (view === 'bestiary') renderBestiary()
+    } else if (msg.type === 'view') switchView(msg.view)
+  }
+
+  // —— 视图切换 / 更换武器入口：IDE 与本地预览都需要 ——
+  const bindTabs = () => {
     const tabBattle = $('tabBattle')
     if (tabBattle) tabBattle.onclick = () => switchView('battle')
     const tabArsenal = $('tabArsenal')
     if (tabArsenal) tabArsenal.onclick = () => switchView('arsenal')
+    const tabBestiary = $('tabBestiary')
+    if (tabBestiary) tabBestiary.onclick = () => switchView('bestiary')
     // 点装备槽 / 「更换武器」按钮 → 跳到武器库并选中当前携带的武器，方便更换
     const goChangeWeapon = () => {
       const id = state && state.arsenal && state.arsenal.shown ? state.arsenal.shown.id : null
@@ -365,6 +551,17 @@
     if (slotEl) slotEl.onclick = goChangeWeapon
     const btnChange = $('changeWpn')
     if (btnChange) btnChange.onclick = goChangeWeapon
+  }
+  bindTabs()
+
+  if (hasHost) {
+    window.addEventListener('message', (e) => onMessage(e.data || {}))
+    const btnAttack = $('attack')
+    if (btnAttack) btnAttack.onclick = () => api.postMessage({ type: 'attack' })
+    const btn = $('reset')
+    if (btn) btn.onclick = () => api.postMessage({ type: 'reset' })
+    const btnExpand = $('expand')
+    if (btnExpand) btnExpand.onclick = () => api.postMessage({ type: 'expand' })
     const eqBtn = $('aEquip')
     if (eqBtn) eqBtn.onclick = () => { if (selectedId) api.postMessage({ type: 'equip', id: selectedId }) }
     const autoBtn = $('aAuto')
@@ -376,7 +573,10 @@
   // ———— 独立预览：无宿主时用注入的假数据自走演示 ————
   const mock = typeof window !== 'undefined' ? window.__NIBBLE_MOCK__ : null
   if (mock) {
-    state = Object.assign({ level: 1, hp: 24, maxHp: 40, enemyName: '蝙蝠', rarityLabel: '普通', rarityColor: '#FFB86B', log: 'Nibble 攻击！野生 蝙蝠 -8 HP' }, mock)
+    state = Object.assign({ level: 1, hp: 24, maxHp: 40, enemyName: '空指针幽灵', enemyTierLabel: '小怪', rarityLabel: '普通', rarityColor: '#FFB86B', log: 'Nibble 攻击！空指针幽灵 -8 HP' }, mock)
+    // 预览页可注入额外消息（怪物库/武器库数据），走与宿主完全相同的一套逻辑
+    const queued = (typeof window !== 'undefined' && window.__NIBBLE_MOCK_MSGS__) || []
+    queued.forEach((m) => onMessage(m))
     let f = 0
     let lunge = 0
     render()
@@ -391,10 +591,10 @@
       state.hp -= dmg
       if (state.hp <= 0) {
         state.hp = state.maxHp
-        state.log = '击败野生 ' + state.enemyName + '！捕获成功 +48XP　✦ 获得 稀有·重构之刃！　新的野生 出现'
+        state.log = '击败 **' + state.enemyName + '**（小怪·普通）！🆕 收录进怪物库 +42XP　✦ 获得 稀有·重构之刃！　新的野生 无尽轮回蛇（小怪·普通）出现'
         showDrop({ name: '重构之刃', rarity: 'rare', rarityLabel: '稀有', color: '#FFE066', sprite: state.weaponSprite })
       } else {
-        state.log = 'Nibble 攻击！野生 ' + state.enemyName + ' -' + dmg + ' HP'
+        state.log = 'Nibble 攻击！' + state.enemyName + ' -' + dmg + ' HP'
       }
       lunge = 3
       render()

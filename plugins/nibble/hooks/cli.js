@@ -38,6 +38,7 @@ if (mode === 'do') {
   if (sub === 'attack') { sp.attack(s); sp.saveSave() }
   if (sub === 'reset') { sp.reset() }
   if (sub === 'arsenal') { process.stdout.write(sp.arsenalCard()); process.exit(0) }
+  if (sub === 'bestiary') { process.stdout.write(sp.bestiaryCard()); process.exit(0) }
   process.stdout.write(sp.card())
   process.exit(0)
 }
@@ -47,12 +48,13 @@ readStdin().then(() => {
   const s = sp.loadSave()
   if (mode === 'sessionStart') {
     sp.saveSave()
+    const info = sp.enemyInfo(s.enemy.type)
     emit({
       continue: true,
       suppressOutput: true,
       systemMessage:
-        `🐾 Nibble 已就位 ｜ Lv ${s.level} ｜ 野生 ${sp.ENEMY_NAMES[s.enemy.type]}` +
-        `（${sp.RARITY_LABEL[s.enemy.rarity]}）HP ${s.enemy.hp}/${s.enemy.maxHp}`,
+        `🐾 Nibble 已就位 ｜ Lv ${s.level} ｜ 野生 ${info.name}` +
+        `（${info.tierLabel}·${sp.RARITY_LABEL[s.enemy.rarity]}）HP ${s.enemy.hp}/${s.enemy.maxHp}`,
     })
   } else if (mode === 'sessionEnd') {
     sp.saveSave()

@@ -26,6 +26,7 @@ let lastDefeats = -1
 let lastKey = ''
 let lastDropAt = -1
 let lastArsenalDefeats = -1
+let lastBestiaryKey = ''
 
 // 定位素材/渲染模块。顺序：
 //   1) config.json 指向的工作区插件目录（本地开发时用，保持单一数据源）
@@ -62,8 +63,9 @@ const flat = (grid) => {
 function buildState() {
   const s = sp.reloadSave()
   const arsenal = sp.arsenalSummary(s)
-  const shown = sp.equippedWeapon(s) // 战斗页展示：已装备 → 否则最近获得
+  const shown = sp.equippedWeapon(s) // 战斗页展示即生效：手动装备 → 否则自动取最高战力
   const weaponSprite = shown ? sp.weaponSpriteGrid(shown.id, true) : null
+  const info = sp.enemyInfo(s.enemy.type)
   return {
     player: flat(sp.decodeGrid('player').grid),
     enemy: flat(sp.enemyGrid(s.enemy.type, s.enemy.rarity, false)),
@@ -72,18 +74,26 @@ function buildState() {
     xpNeed: sp.xpNeed(s.level),
     hp: s.enemy.hp,
     maxHp: s.enemy.maxHp,
-    enemyName: sp.ENEMY_NAMES[s.enemy.type],
+    enemyType: s.enemy.type,
+    enemyName: info.name,
+    enemyTier: info.tier,
+    enemyTierLabel: info.tierLabel,
+    enemyMech: info.mechText,
+    bestiary: sp.bestiarySummary(s),
     rarityLabel: sp.RARITY_LABEL[s.enemy.rarity],
     rarity: s.enemy.rarity,
     rarityColor: sp.RARITY_COLOR[s.enemy.rarity],
     battles: s.battles,
     defeats: s.defeats,
     log: s.lastLog || 'Nibble 待命中…（向 CodeBuddy 提问即可发动攻击）',
-    key: s.enemy.type + '|' + s.enemy.rarity + '|' + s.enemy.maxHp + '|' + s.battles,
+    // 换武器 / 最高战力变化也要触发推送，故把生效武器一并计入 key
+    key: s.enemy.type + '|' + s.enemy.rarity + '|' + s.enemy.maxHp + '|' + s.battles +
+      '|' + (s.equipped || '') + '|' + (shown ? shown.id : ''),
     arsenal,
     weaponSprite: weaponSprite ? flat(weaponSprite) : null,
     weaponName: shown ? shown.name : null,
     weaponRarity: shown ? shown.rarity : null,
+    weaponPower: shown ? shown.power : 0, // 战力（百分比攻击加成）
     weaponColor: shown ? sp.RARITY_COLOR[shown.rarity] : null,
   }
 }
@@ -102,7 +112,30 @@ function buildArsenalData(arsenal) {
     pityLimit: arsenal.pityLimit,
     equipped: arsenal.equipped,
     shown: arsenal.shown,
+    atkBase: arsenal.atkBase,
+    atkTotal: arsenal.atkTotal,
     list: sp.WEAPONS,
+    sprites,
+  }
+}
+
+// 怪物库全量数据（40 只：清单 + 素材 + 遭遇/击败双状态），仅在收集状态变化时推送
+function buildBestiaryData(sum, currentId) {
+  const sprites = {}
+  for (const e of sp.ENEMIES) sprites[e.id] = flat(sp.enemyGrid(e.id, 'common', false))
+  return {
+    type: 'bestiaryData',
+    seen: sum.seenMap,
+    defeated: sum.defeatedMap,
+    current: currentId || null,
+    list: sp.ENEMIES.map((e) => ({
+      id: e.id,
+      name: e.name,
+      tier: e.tier,
+      minLv: e.minLv,
+      story: e.story || '',
+      mechText: sp.mechSummary(e),
+    })),
     sprites,
   }
 }
@@ -173,6 +206,13 @@ function tick() {
     const data = buildArsenalData(st.arsenal)
     targets.forEach((w) => post(w, data))
   }
+  // 怪物库数据：遭遇/击败状态变化时推送全量
+  const bestiaryKey = st.bestiary.seen + '|' + st.bestiary.totalDefeats
+  if (bestiaryKey !== lastBestiaryKey) {
+    lastBestiaryKey = bestiaryKey
+    const data = buildBestiaryData(st.bestiary, st.enemyType)
+    targets.forEach((w) => post(w, data))
+  }
   const t = {
     type: 'tick',
     frame,
@@ -207,6 +247,7 @@ function wireMessages(webview) {
       sp.reset()
       lastKey = ''
       lastArsenalDefeats = -1
+      lastBestiaryKey = ''
       tick()
     } else if (msg.type === 'equip') {
       try {
@@ -348,10 +389,15 @@ function activate(context) {
       openEditorPanel()
       post(panel && panel.webview, { type: 'view', view: 'arsenal' })
     }),
+    vscode.commands.registerCommand('nibble.openBestiary', () => {
+      openEditorPanel()
+      post(panel && panel.webview, { type: 'view', view: 'bestiary' })
+    }),
     vscode.commands.registerCommand('nibble.reset', () => {
       sp.reset()
       lastKey = ''
       lastArsenalDefeats = -1
+      lastBestiaryKey = ''
       tick()
       vscode.window.showInformationMessage('♻️ Nibble 等级/经验/战绩已重置')
     }),

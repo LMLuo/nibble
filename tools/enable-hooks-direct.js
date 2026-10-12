@@ -63,8 +63,8 @@ console.log('✅ 已写入 ' + settingsPath)
 
 // ---- 5. 用户级 /nibble 命令（用户级命令无法用 ${CODEBUDDY_PLUGIN_ROOT}，故写绝对路径）----
 const md = `---
-description: Nibble 小生物：查看状态 / attack 补刀 / reset 重置
-argument-hint: [attack|reset]
+description: Nibble 小生物：查看状态 / attack 补刀 / arsenal 武器库 / bestiary 怪物库 / reset 重置
+argument-hint: [attack|arsenal|bestiary|reset]
 allowed-tools: Bash(node:*)
 ---
 

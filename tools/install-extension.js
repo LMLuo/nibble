@@ -14,7 +14,6 @@ const path = require('path')
 
 const marketRoot = path.resolve(__dirname, '..')
 const srcDir = path.join(marketRoot, 'vscode-extension')
-const sharedJs = path.join(marketRoot, 'plugins', 'nibble', 'hooks', 'nibble.js')
 const EXT_ID = 'nibble.nibble'
 // 版本号从扩展的 package.json 读取，避免升版后忘记同步（曾写死 0.1.0）
 const VERSION = JSON.parse(fs.readFileSync(path.join(srcDir, 'package.json'), 'utf8')).version
@@ -62,12 +61,18 @@ if (fs.existsSync(destDir)) {
   fs.rmSync(destDir, { recursive: true, force: true })
   console.log('🧹 已清空旧的目标目录: ' + destDir)
 }
-fs.mkdirSync(destDir, { recursive: true })
-fs.cpSync(srcDir, destDir, {
-  recursive: true,
-  force: true,
-  filter: (src) => !/[\\/]icon-src([\\/]|$)/.test(src),
-})
+// Node 14 兼容：fs.cpSync 要 Node 16.7+，这里手写递归拷贝（跳过不可再生的 icon-src）
+function copyDir(src, dest) {
+  fs.mkdirSync(dest, { recursive: true })
+  for (const name of fs.readdirSync(src)) {
+    if (name === 'icon-src') continue
+    const from = path.join(src, name)
+    const to = path.join(dest, name)
+    if (fs.statSync(from).isDirectory()) copyDir(from, to)
+    else fs.copyFileSync(from, to)
+  }
+}
+copyDir(srcDir, destDir)
 fs.writeFileSync(
   path.join(destDir, 'config.json'),
   JSON.stringify({ pluginRoot: marketRoot.replace(/\\/g, '/') }, null, 2) + '\n',
@@ -129,13 +134,14 @@ try {
   console.log('⚠️  清除缓存失败（不影响，可忽略）: ' + err.message)
 }
 
-// ---------- 3b. 移除历史版本目录（改名前的 spinlings.*）----------
-for (const name of LEGACY_FOLDERS) {
+// ---------- 3b. 移除旧版本目录（同 id 的其它版本 + 改名前的 spinlings.*）----------
+for (const name of fs.readdirSync(extDir)) {
+  if (name === FOLDER) continue
+  if (!name.startsWith(EXT_ID + '-') && !LEGACY_FOLDERS.includes(name)) continue
   const folder = path.join(extDir, name)
-  if (fs.existsSync(folder)) {
-    fs.rmSync(folder, { recursive: true, force: true })
-    console.log('🧹 已移除历史版本目录: ' + name)
-  }
+  if (!fs.statSync(folder).isDirectory()) continue
+  fs.rmSync(folder, { recursive: true, force: true })
+  console.log('🧹 已移除旧版本目录: ' + name)
 }
 
 // ---------- 4. 清掉之前装错位置的那份 ----------
@@ -156,35 +162,8 @@ try {
   }
 } catch { /* 忽略清理问题 */ }
 
-// ---------- 5. 生成可视化预览页（真实素材，浏览器直接可看）----------
-const sp = require(sharedJs)
-const flat = (grid) => {
-  const out = []
-  for (let r = 0; r < grid.length; r++) for (let c = 0; c < grid.length; c++) out.push(grid[r][c] || '')
-  return out
-}
-const s = sp.reloadSave()
-const mock = {
-  player: flat(sp.decodeGrid('player').grid),
-  enemy: flat(sp.enemyGrid(s.enemy.type, s.enemy.rarity, false)),
-  level: s.level,
-  exp: s.exp,
-  hp: s.enemy.hp,
-  maxHp: s.enemy.maxHp,
-  enemyName: sp.ENEMY_NAMES[s.enemy.type],
-  rarityLabel: sp.RARITY_LABEL[s.enemy.rarity],
-  rarity: s.enemy.rarity,
-  rarityColor: sp.RARITY_COLOR[s.enemy.rarity],
-  log: s.lastLog || 'Nibble 待命中…（向 CodeBuddy 提问即可发动攻击）',
-}
-let html = fs.readFileSync(path.join(srcDir, 'media', 'panel.html'), 'utf8')
-html = html.replace(
-  '<!--PET_JS-->',
-  '<script>window.__NIBBLE_MOCK__=' + JSON.stringify(mock) + ';</script>\n<script src="pet.js"></script>',
-)
-html = html.replace('<title>Nibble</title>', '<title>Nibble · 预览</title>')
-const previewPath = path.join(srcDir, 'media', 'preview.html')
-fs.writeFileSync(previewPath, html, 'utf8')
-console.log('✅ 已生成预览页 → ' + previewPath)
+// ---------- 5. 生成可视化预览页（真实素材 + 怪物库 mock，浏览器直接可看）----------
+// 复用 make-preview.js：结构与 panel.html 完全一致，避免这里手写 mock 与面板脱节
+require('./make-preview').buildPreview()
 console.log('')
 console.log('👉 现在重启 IDE 或运行 “Developer: Reload Window”，状态栏与面板就会出现。')

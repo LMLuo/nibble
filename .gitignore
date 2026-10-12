@@ -13,8 +13,9 @@ vscode-extension/icon-src/
 # 本地预览产物
 vscode-extension/media/preview.html
 
-# 武器素材：真源是 sheets/（AI 原图，不可再生），cells/ 由 tools/weapons-sprites.mjs 切出
+# 武器/怪物素材：真源是 sheets/（AI 原图，不可再生），cells/ 由 tools/*-sprites.mjs 切出
 legacy-mods/assets/weapons/cells/
+legacy-mods/assets/monsters/cells/
 
 # 像素校验用的放大预览图，由 png2grid.mjs / weapons-sprites.mjs 重新生成
 legacy-mods/preview/

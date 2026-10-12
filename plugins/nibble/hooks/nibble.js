@@ -10,7 +10,15 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { PIXEL_DATA } = require('./pixels')
-const { WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid } = require('./weapons')
+const { WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid, WEAPON_POWER, bestOwnedWeapon } = require('./weapons')
+const {
+  ENEMIES, ENEMY_INDEX, ENEMY_TOTAL, TIER_COUNTS, TIER_LABEL, TIER_ORDER,
+  enemyMaxHp, pickEnemy, mechSummary,
+} = require('./enemies')
+
+// 怪物素材（构建期由 tools/monsters-sprites.mjs 生成）；未构建时回落到内置素材，保证不崩
+let ENEMY_PIXEL_DATA = {}
+try { ENEMY_PIXEL_DATA = require('./enemies-pixels').ENEMY_PIXEL_DATA || {} } catch { /* 素材未生成 */ }
 
 // ============================ 网格解码 / 变换 ============================
 const GRID_CACHE = new Map()
@@ -18,7 +26,8 @@ const TINT_CACHE = new Map()
 
 function decodeGrid(name) {
   if (GRID_CACHE.has(name)) return GRID_CACHE.get(name)
-  const { palette, rows } = PIXEL_DATA[name]
+  // 怪物素材优先取 enemies-pixels.js，其次回落到内置素材（主角与早期敌人）
+  const { palette, rows } = ENEMY_PIXEL_DATA[name] || PIXEL_DATA[name] || PIXEL_DATA.slime
   const grid = rows.map((row) =>
     [...row].map((ch) => (ch === '.' ? null : palette[parseInt(ch, 36)] || null)),
   )
@@ -186,10 +195,26 @@ function renderShaded(grid, w, h) {
 }
 
 // ============================ 战斗状态与存档 ============================
-const ENEMY_NAMES = { bat: '蝙蝠', slime: '史莱姆', mimic: '宝箱怪' }
-const ENEMY_TYPES = Object.keys(ENEMY_NAMES)
+// 怪物名表由 enemies.js 派生（40 只「编程 Bug」怪物）；ENEMY_NAMES 保留为兼容出口
+const ENEMY_NAMES = {}
+for (const e of ENEMIES) ENEMY_NAMES[e.id] = e.name
 const RARITY_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legendary: '传说' }
 const RARITY_COLOR = { common: '#FFB86B', rare: '#FFE066', epic: '#E040E0', legendary: '#FFD700' }
+const STARTER_ENEMY = 'null_pointer'
+
+// 怪物条目查询（未知 id 回落到首只小怪，避免脏存档导致崩溃）
+function enemyInfo(id) {
+  const e = ENEMY_INDEX[id] || ENEMY_INDEX[STARTER_ENEMY] || ENEMIES[0]
+  return {
+    id: e.id,
+    name: e.name,
+    tier: e.tier,
+    tierLabel: TIER_LABEL[e.tier] || '小怪',
+    mech: e.mech || {},
+    mechText: mechSummary(e),
+    story: e.story || '',
+  }
+}
 
 function dataDir() {
   const env = process.env.CODEBUDDY_PLUGIN_DATA || process.env.CLAUDE_PLUGIN_DATA
@@ -202,7 +227,11 @@ const savePath = () => path.join(dataDir(), 'save.json')
 let save = null
 
 function freshSave() {
-  return { v: 1, level: 1, exp: 0, battles: 0, defeats: 0, lastLog: null, logKind: 'idle', enemy: null, arsenal: { owned: {}, pity: 0 }, lastDrop: null, equipped: null }
+  return {
+    v: 1, level: 1, exp: 0, battles: 0, defeats: 0, lastLog: null, logKind: 'idle', enemy: null,
+    arsenal: { owned: {}, pity: 0 }, lastDrop: null, equipped: null,
+    bestiary: { seen: {}, defeated: {} },
+  }
 }
 
 // 解析武器库存档：只接受已知武器 id，未知 id 静默丢弃（向前兼容加/删武器）
@@ -219,10 +248,67 @@ function parseArsenal(a) {
   return out
 }
 
+// 解析怪物库存档：只接受已知怪物 id（未知 id 静默丢弃，向前兼容加/删怪物）
+function parseBestiary(b) {
+  const out = { seen: {}, defeated: {} }
+  if (b && typeof b === 'object') {
+    if (b.defeated && typeof b.defeated === 'object') {
+      for (const k of Object.keys(b.defeated)) {
+        if (!ENEMY_INDEX[k]) continue
+        const n = Math.max(0, Number(b.defeated[k]) || 0)
+        if (n > 0) out.defeated[k] = n
+      }
+    }
+    if (b.seen && typeof b.seen === 'object') {
+      for (const k of Object.keys(b.seen)) {
+        if (!ENEMY_INDEX[k]) continue
+        const v = b.seen[k] || {}
+        out.seen[k] = { first: Number(v.first) || 0, count: Math.max(1, Number(v.count) || 1) }
+      }
+    }
+    // 已击败但缺 seen 记录（旧档/异常档）自动补一条，保证双状态自洽
+    for (const k of Object.keys(out.defeated)) {
+      if (!out.seen[k]) out.seen[k] = { first: 0, count: out.defeated[k] }
+    }
+  }
+  return out
+}
+
+function ensureBestiary(s) {
+  if (!s.bestiary) s.bestiary = parseBestiary(null)
+  return s.bestiary
+}
+
+// 遭遇即入库（首次记时间戳，之后累加次数）
+function markSeen(s, id) {
+  if (!ENEMY_INDEX[id]) return
+  const b = ensureBestiary(s)
+  const rec = b.seen[id]
+  if (rec) rec.count += 1
+  else b.seen[id] = { first: Date.now(), count: 1 }
+}
+
+function markDefeated(s, id) {
+  if (!ENEMY_INDEX[id]) return
+  const b = ensureBestiary(s)
+  b.defeated[id] = (b.defeated[id] || 0) + 1
+  if (!b.seen[id]) b.seen[id] = { first: Date.now(), count: 1 }
+}
+
 // 成长曲线
 const xpNeed = (lv) => 20 + (lv - 1) * 15
-const playerAtk = (lv) => 4 + lv * 2
-const enemyMaxHp = (lv) => 30 + (lv - 1) * 8 + Math.floor(Math.random() * 16)
+// 等级攻击成长刻意压低（原 4+2lv）：强度缺口交给武器战力补，武器才"有作用"（见 07 文档「战力系统」）
+const playerAtk = (lv) => Math.round(4 + lv * 1.2)
+// 怪物 HP 由 enemies.js 的 tier / 稀有度 / 等级三重缩放给出（详见 08 文档「难度模型」）
+
+// 玩家实际攻击力 = 等级基础攻击 ×（1 + 生效武器战力%）
+// ⚠️ atk 刻意保留小数：先取整会在低等级直接把 +8%/+15% 抹平（见 tools/balance-sim.js）
+function playerAtkWith(s) {
+  const base = playerAtk(s.level)
+  const w = equippedWeapon(s)
+  const power = w ? w.power : 0
+  return { base, weapon: w, power, atk: Math.max(1, base * (1 + power / 100)) }
+}
 
 function rollRarity(lv) {
   const b = Math.min((lv - 1) * 0.01, 0.12)
@@ -233,10 +319,22 @@ function rollRarity(lv) {
   return 'legendary'
 }
 
-function spawnEnemy(s) {
-  const type = ENEMY_TYPES[Math.floor(Math.random() * ENEMY_TYPES.length)]
-  const maxHp = enemyMaxHp(s.level)
-  s.enemy = { type, rarity: rollRarity(s.level), hp: maxHp, maxHp }
+// 抽取并登记一只新怪：tier 权重随等级浮动，遭遇即写入怪物库
+function spawnEnemy(s, opts) {
+  const entry = (opts && opts.entry) || pickEnemy(s.level)
+  const rarity = (opts && opts.rarity) || rollRarity(s.level)
+  const maxHp = (opts && opts.maxHp) || enemyMaxHp(s.level, entry, rarity)
+  const mech = entry.mech || {}
+  s.enemy = {
+    type: entry.id,
+    rarity,
+    hp: maxHp,
+    maxHp,
+    shieldLeft: mech.shield || 0,
+    splitDone: false,
+  }
+  markSeen(s, entry.id)
+  return s.enemy
 }
 
 function loadSave() {
@@ -251,12 +349,20 @@ function loadSave() {
       s.battles = Number(parsed.battles) || 0
       s.defeats = Number(parsed.defeats) || 0
       const e = parsed.enemy
-      if (e && ENEMY_NAMES[e.type] && typeof e.hp === 'number' && typeof e.maxHp === 'number' && e.hp > 0) {
-        s.enemy = { type: e.type, rarity: RARITY_LABEL[e.rarity] ? e.rarity : 'common', hp: e.hp, maxHp: e.maxHp }
+      if (e && ENEMY_INDEX[e.type] && typeof e.hp === 'number' && typeof e.maxHp === 'number' && e.hp > 0) {
+        s.enemy = {
+          type: e.type,
+          rarity: RARITY_LABEL[e.rarity] ? e.rarity : 'common',
+          hp: e.hp,
+          maxHp: e.maxHp,
+          shieldLeft: Math.max(0, Number(e.shieldLeft) || 0),
+          splitDone: !!e.splitDone,
+        }
       }
       if (typeof parsed.lastLog === 'string') s.lastLog = parsed.lastLog
       if (typeof parsed.logKind === 'string') s.logKind = parsed.logKind
       s.arsenal = parseArsenal(parsed.arsenal)
+      s.bestiary = parseBestiary(parsed.bestiary)
       if (parsed.lastDrop && typeof parsed.lastDrop === 'object' && WEAPON_INDEX[parsed.lastDrop.id]) {
         s.lastDrop = { id: parsed.lastDrop.id, at: Number(parsed.lastDrop.at) || 0 }
       }
@@ -287,34 +393,85 @@ function gainExp(s, amount) {
   return ups
 }
 
-// 一次攻击：返回一行战斗日志
+// 一次攻击：应用怪物机制（闪避/护盾/护甲/自愈/分裂）→ 返回一行战斗日志
 function attack(s) {
-  const atk = playerAtk(s.level)
-  const dmg = Math.max(1, atk + Math.floor(Math.random() * 5) - 2)
-  s.enemy.hp -= dmg
+  const enemy = s.enemy
+  const info = enemyInfo(enemy.type)
+  const mech = info.mech
+  const atk = playerAtkWith(s).atk // 等级基础攻击 × 生效武器战力%
   s.battles += 1
-  if (s.enemy.hp <= 0) {
-    s.enemy.hp = 0
-    s.defeats += 1
-    const caught = Math.random() < 0.7
-    const gain = 8 + s.enemy.maxHp
-    const ups = gainExp(s, gain)
-    let log = `击败野生 ${ENEMY_NAMES[s.enemy.type]}（${RARITY_LABEL[s.enemy.rarity]}）！${caught ? '捕获成功' : '未捕获'} +${gain}XP`
-    if (ups > 0) log += `　⬆ 升级 Lv ${s.level}！`
-    if (!s.arsenal) s.arsenal = parseArsenal(null)
-    const drop = rollWeapon(s.arsenal.pity)
-    s.arsenal.pity = drop.pity
-    s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
-    s.lastDrop = { id: drop.weapon.id, at: Date.now() }
-    log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
-    spawnEnemy(s)
-    log += `　新的野生 ${ENEMY_NAMES[s.enemy.type]}（${RARITY_LABEL[s.enemy.rarity]}）出现`
-    s.logKind = ups > 0 ? 'levelup' : 'victory'
+
+  // 伤害波动改为按比例（±10%）而非固定 ±2：低等级下固定抖动会淹没武器战力的差距
+  let dmg = Math.max(1, Math.round(atk * (0.9 + Math.random() * 0.2)))
+  const notes = []
+  if (mech.dodge && Math.random() < mech.dodge) {
+    dmg = 0
+    notes.push('闪避')
+  } else {
+    if (enemy.shieldLeft > 0) {
+      dmg = Math.max(1, Math.round(dmg / 2))
+      enemy.shieldLeft -= 1
+      notes.push('护盾格挡')
+    }
+    if (mech.armor) {
+      const before = dmg
+      dmg = Math.max(1, dmg - mech.armor)
+      if (dmg < before) notes.push(`护甲 ${mech.armor}`)
+    }
+  }
+  enemy.hp = Math.max(0, enemy.hp - dmg)
+  const note = notes.length ? `（${notes.join('·')}）` : ''
+
+  // 未死：结算自愈
+  if (enemy.hp > 0) {
+    let log = `Nibble 攻击！${info.name} -${dmg} HP${note}`
+    if (mech.regen) {
+      const healed = Math.min(mech.regen, enemy.maxHp - enemy.hp)
+      if (healed > 0) {
+        enemy.hp += healed
+        log += `　💚 ${info.name} 自愈 +${healed} HP`
+      }
+    }
+    s.logKind = 'attack'
     s.lastLog = log
     return log
   }
-  const log = `Nibble 攻击！野生 ${ENEMY_NAMES[s.enemy.type]} -${dmg} HP`
-  s.logKind = 'attack'
+
+  // 首次归零且带分裂：原地分裂成两只 50% HP 个体（整场只触发一次）
+  if (mech.split && !enemy.splitDone) {
+    enemy.splitDone = true
+    const childHp = Math.max(1, Math.round(enemy.maxHp * 0.5))
+    enemy.maxHp = childHp
+    enemy.hp = childHp
+    enemy.shieldLeft = 0
+    const log = `🧬 ${info.name} 受创分裂！重置为 ${childHp} HP（分裂体 ×2）`
+    s.logKind = 'attack'
+    s.lastLog = log
+    return log
+  }
+
+  // 击败：记怪物库 + 掉武器 + 刷新新怪
+  enemy.hp = 0
+  s.defeats += 1
+  const b = ensureBestiary(s)
+  const firstTime = !b.defeated[enemy.type]
+  markDefeated(s, enemy.type)
+  const gain = 6 + Math.round(enemy.maxHp * 0.6)
+  const ups = gainExp(s, gain)
+  let log = `击败 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[enemy.rarity]}）！`
+  log += firstTime ? '🆕 收录进怪物库' : `怪物库 ×${b.defeated[enemy.type]}`
+  log += ` +${gain}XP`
+  if (ups > 0) log += `　⬆ 升级 Lv ${s.level}！`
+  if (!s.arsenal) s.arsenal = parseArsenal(null)
+  const drop = rollWeapon(s.arsenal.pity)
+  s.arsenal.pity = drop.pity
+  s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
+  s.lastDrop = { id: drop.weapon.id, at: Date.now() }
+  log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
+  spawnEnemy(s)
+  const next = enemyInfo(s.enemy.type)
+  log += `　新的野生 ${next.name}（${next.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）出现`
+  s.logKind = ups > 0 ? 'levelup' : 'victory'
   s.lastLog = log
   return log
 }
@@ -343,8 +500,11 @@ function statusLine() {
   const sword = '\x1b[1;31m⚔\x1b[0m'
   const lv = `\x1b[1;36mLv${s.level}\x1b[0m`
   const bar = fg(hpColor) + hp.bar + RESET + ' ' + hp.num
-  const name = fg(RARITY_COLOR[s.enemy.rarity]) + ENEMY_NAMES[s.enemy.type] + RESET
-  return `${pStr} ${sword} ${eStr}  ${lv} ${bar}  ${name}`
+  const info = enemyInfo(s.enemy.type)
+  const name = fg(RARITY_COLOR[s.enemy.rarity]) + info.name + RESET
+  const atk = playerAtkWith(s)
+  const wpn = atk.power ? ' ' + fg(RARITY_COLOR[atk.weapon.rarity]) + '⚔+' + atk.power + '%' + RESET : ''
+  return `${pStr} ${sword} ${eStr}  ${lv} ${bar}  ${name}${wpn}`
 }
 
 // 战斗日志（供 hook systemMessage 使用，纯文本一行）
@@ -363,13 +523,18 @@ function card() {
   for (let i = 0; i < 12; i++) rows.push(p[i] + '   ⚔   ' + e[i])
   const hp = hpBar(s)
   const sum = arsenalSummary(s)
+  const best = bestiarySummary(s)
+  const info = enemyInfo(s.enemy.type)
+  const mech = info.mechText ? ` · ${info.mechText}` : ''
   return [
     '```',
     ...rows,
     '```',
-    `**Lv ${s.level}** · XP ${s.exp}/${xpNeed(s.level)} · 攻击 ${s.battles} 次 · 击败 ${s.defeats} 次`,
-    `HP [${hp.bar}] ${hp.num}　野生 **${ENEMY_NAMES[s.enemy.type]}**（${RARITY_LABEL[s.enemy.rarity]}）`,
-    `⚔ 武器库 ${sum.owned}/${sum.total}　保底 ${sum.pity}/${sum.pityLimit}${sum.shown ? `　携带：${RARITY_LABEL[sum.shown.rarity]}·${sum.shown.name}${sum.equipped ? '' : '（跟随最近获得）'}` : ''}`,
+    `**Lv ${s.level}** · XP ${s.exp}/${xpNeed(s.level)} · 出击 ${s.battles} 次 · 击败 ${s.defeats} 次`,
+    `HP [${hp.bar}] ${hp.num}　野生 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）${mech}`,
+    `🗡 攻击 ${sum.atkTotal}（等级基础 ${sum.atkBase}${sum.shown ? ` ＋ ${RARITY_LABEL[sum.shown.rarity]}·${sum.shown.name} 战力 +${sum.shown.power}%` : ' · 未持武器'}）`,
+    `⚔ 武器库 ${sum.owned}/${sum.total}　保底 ${sum.pity}/${sum.pityLimit}${sum.shown && !sum.equipped ? '　（自动·取最高战力）' : ''}`,
+    `📖 怪物库 ${best.seen}/${best.total}（已击败 ${best.defeated}）`,
     `最近：${s.lastLog || '待命中'}`,
   ].join('\n')
 }
@@ -384,18 +549,19 @@ function miniSprite(name, rarity) {
 function panel() {
   const s = loadSave()
   const hp = hpBar(s)
+  const info = enemyInfo(s.enemy.type)
   return [
-    `${miniSprite('player')}  ⚔  ${miniSprite(s.enemy.type, s.enemy.rarity)}   Lv${s.level}  HP [${hp.bar}] ${hp.num}  ${ENEMY_NAMES[s.enemy.type]}（${RARITY_LABEL[s.enemy.rarity]}）`,
+    `${miniSprite('player')}  ⚔  ${miniSprite(s.enemy.type, s.enemy.rarity)}   Lv${s.level}  HP [${hp.bar}] ${hp.num}  ${info.name}（${info.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）`,
     s.lastLog || 'Nibble 待命中…（向 CodeBuddy 提问即可发动攻击）',
   ].join('\n')
 }
 
-// 战斗页当前展示的武器：优先"已装备"，否则回落到最近获得的那把
+// 当前**生效**的武器（同时就是战斗页展示的那把——刻意合并，避免"显示的是弱的、打的是强的"）：
+//   手动装备优先；未装备则自动取已拥有里战力最高的那把（永不亏）
 function equippedWeapon(s) {
   const owned = (s && s.arsenal && s.arsenal.owned) || {}
   if (s && s.equipped && WEAPON_INDEX[s.equipped] && owned[s.equipped]) return WEAPON_INDEX[s.equipped]
-  const ld = s && s.lastDrop && WEAPON_INDEX[s.lastDrop.id] && owned[s.lastDrop.id] ? WEAPON_INDEX[s.lastDrop.id] : null
-  return ld || null
+  return bestOwnedWeapon(owned)
 }
 
 // 装备/卸下（id 为 null 或未拥有则回到"跟随最近获得"）
@@ -412,15 +578,18 @@ function arsenalSummary(s) {
   const ar = (s && s.arsenal) || { owned: {}, pity: 0 }
   const ld = s && s.lastDrop && WEAPON_INDEX[s.lastDrop.id] ? WEAPON_INDEX[s.lastDrop.id] : null
   const shown = equippedWeapon(s)
+  const atk = playerAtkWith(s)
   return {
     owned: Object.keys(ar.owned).length,
     total: WEAPON_TOTAL,
     pity: ar.pity,
     pityLimit: PITY_LIMIT,
     ownedMap: ar.owned,
-    equipped: (s && s.equipped) || null, // 玩家手动装备的
-    shown: shown ? { id: shown.id, name: shown.name, rarity: shown.rarity } : null, // 实际展示的
-    last: ld ? { id: ld.id, name: ld.name, rarity: ld.rarity, story: ld.story || '', at: (s.lastDrop && s.lastDrop.at) || 0 } : null,
+    equipped: (s && s.equipped) || null, // 玩家手动装备的（null = 自动取最高战力）
+    shown: shown ? { id: shown.id, name: shown.name, rarity: shown.rarity, power: shown.power } : null, // 当前生效/展示
+    atkBase: atk.base, // 等级基础攻击
+    atkTotal: Math.round(atk.atk), // 含武器战力的实际攻击（展示取整，内部计算保留小数）
+    last: ld ? { id: ld.id, name: ld.name, rarity: ld.rarity, power: ld.power, story: ld.story || '', at: (s.lastDrop && s.lastDrop.at) || 0 } : null,
   }
 }
 
@@ -433,19 +602,74 @@ function arsenalCard() {
   const byRarity = { legendary: [], epic: [], rare: [], common: [] }
   for (const w of WEAPONS) if (owned[w.id]) byRarity[w.rarity].push(w)
   const order = ['legendary', 'epic', 'rare', 'common']
+  const atk = playerAtkWith(s)
+  const shown = equippedWeapon(s)
+  const activeId = shown ? shown.id : null
   const lines = [
     '**⚔ Nibble 武器库**',
     '```',
     `已收集 ${uniq}/${WEAPON_TOTAL}　保底 ${Math.min(ar.pity + 1, PITY_LIMIT)}/${PITY_LIMIT}`,
     order.map((r) => `${RARITY_LABEL[r]} ${byRarity[r].length}/${RARITY_COUNTS[r]}`).join(' · '),
+    `🗡 攻击 ${Math.round(atk.atk)}（等级基础 ${atk.base}${atk.power ? ` ＋ ${atk.weapon.name} 战力 +${atk.power}%` : ' · 未持武器'}）`,
     '```',
   ]
   for (const r of order) {
     if (!byRarity[r].length) continue
-    lines.push(`**${RARITY_LABEL[r]}**`)
-    for (const w of byRarity[r]) lines.push(`- ${w.name}${owned[w.id] > 1 ? ` ×${owned[w.id]}` : ''}`)
+    lines.push(`**${RARITY_LABEL[r]}**（战力 +${WEAPON_POWER[r]}%）`)
+    for (const w of byRarity[r]) {
+      lines.push(`- ${w.name}${owned[w.id] > 1 ? ` ×${owned[w.id]}` : ''}${w.id === activeId ? '　← 生效中' : ''}`)
+    }
   }
   if (!uniq) lines.push('（武器库空空如也——击败一只野生敌人即可掉落第一把！）')
+  return lines.join('\n')
+}
+
+// 怪物库汇总（供状态栏 / 卡片 / 扩展使用）：遭遇与击败双状态
+function bestiarySummary(s) {
+  const b = (s && s.bestiary) || { seen: {}, defeated: {} }
+  const seenIds = Object.keys(b.seen).filter((id) => ENEMY_INDEX[id])
+  const defeatIds = Object.keys(b.defeated).filter((id) => ENEMY_INDEX[id] && b.defeated[id] > 0)
+  const tierSeen = { common: 0, elite: 0, boss: 0 }
+  const tierDefeated = { common: 0, elite: 0, boss: 0 }
+  for (const id of seenIds) tierSeen[ENEMY_INDEX[id].tier] += 1
+  for (const id of defeatIds) tierDefeated[ENEMY_INDEX[id].tier] += 1
+  return {
+    total: ENEMY_TOTAL,
+    seen: seenIds.length,
+    defeated: defeatIds.length,
+    totalDefeats: defeatIds.reduce((n, id) => n + b.defeated[id], 0),
+    tierSeen,
+    tierDefeated,
+    tierCounts: TIER_COUNTS,
+    seenMap: b.seen,
+    defeatedMap: b.defeated,
+  }
+}
+
+// 怪物库卡片：已遭遇的怪物按 tier 分组列出（未遭遇的不显示，保留悬念）
+function bestiaryCard() {
+  const s = loadSave()
+  const sum = bestiarySummary(s)
+  const lines = [
+    '**📖 Nibble 怪物库**',
+    '```',
+    `已收录 ${sum.seen}/${sum.total}　已击败 ${sum.defeated}/${sum.total}　累计击败 ${sum.totalDefeats} 次`,
+    TIER_ORDER.map((t) => `${TIER_LABEL[t]} ${sum.tierSeen[t]}/${sum.tierCounts[t]}`).join(' · '),
+    '```',
+  ]
+  for (const t of TIER_ORDER) {
+    const ids = Object.keys(sum.seenMap).filter((id) => ENEMY_INDEX[id] && ENEMY_INDEX[id].tier === t)
+    if (!ids.length) continue
+    ids.sort((a, b) => (ENEMY_INDEX[a].minLv - ENEMY_INDEX[b].minLv) || a.localeCompare(b))
+    lines.push(`**${TIER_LABEL[t]}**`)
+    for (const id of ids) {
+      const e = ENEMY_INDEX[id]
+      const n = sum.defeatedMap[id] || 0
+      const mech = mechSummary(e)
+      lines.push(`- ${e.name}${n ? ` · 击败 ${n} 次` : ' · 已遭遇，尚未击败'}${mech ? `　（${mech}）` : ''}`)
+    }
+  }
+  if (!sum.seen) lines.push('（怪物库还是空的——向 CodeBuddy 提问即可遭遇第一只「编程 Bug」怪物！）')
   return lines.join('\n')
 }
 
@@ -453,15 +677,20 @@ function reset() {
   save = freshSave()
   spawnEnemy(save)
   saveSave()
-  return '♻️ 已重置等级/经验/战绩/武器库与当前敌人'
+  return '♻️ 已重置等级/经验/战绩/武器库/怪物库与当前敌人'
 }
 
 module.exports = {
   loadSave, reloadSave, saveSave, attack, spawnEnemy, statusLine, battleLog, card, panel, miniSprite,
   reset, hpBar, xpNeed, dataDir, arsenalCard, arsenalSummary, equippedWeapon, equipWeapon,
+  playerAtk, playerAtkWith,
+  bestiaryCard, bestiarySummary, enemyInfo,
   // 供 IDE 扩展复用（把 24x24 网格交给 Webview 真彩绘制）
   decodeGrid, shiftGrid, enemyGrid, miniGrid, renderShaded, RARITY_COLOR,
   ENEMY_NAMES, RARITY_LABEL,
   // 武器库（纯收集）：数据 + 掉落 + 素材
   WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid,
+  WEAPON_POWER, bestOwnedWeapon,
+  // 怪物库（40 只「编程 Bug」怪物）：数据 + 数值 + 机制
+  ENEMIES, ENEMY_INDEX, ENEMY_TOTAL, TIER_COUNTS, TIER_LABEL, TIER_ORDER, mechSummary, enemyMaxHp, pickEnemy,
 }

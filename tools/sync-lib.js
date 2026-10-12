@@ -10,7 +10,11 @@ const path = require('path')
 const marketRoot = path.resolve(__dirname, '..')
 const srcDir = path.join(marketRoot, 'plugins', 'nibble', 'hooks')
 const libDir = path.join(marketRoot, 'vscode-extension', 'lib')
-const FILES = ['pixels.js', 'nibble.js', 'weapons.js', 'weapons-pixels.js', 'weapons-stories.js']
+const FILES = [
+  'pixels.js', 'nibble.js',
+  'weapons.js', 'weapons-pixels.js', 'weapons-stories.js',
+  'enemies.js', 'enemies-pixels.js', 'enemies-stories.js',
+]
 
 function sync() {
   fs.mkdirSync(libDir, { recursive: true })

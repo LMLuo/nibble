@@ -60,8 +60,10 @@
   .tip { color:#6b7484; }
   #expand { display:none; }
   body.in-view #expand { display:inline-block; }
-  /* —— 武器库视图 —— */
-  #arsenalView { padding:10px 12px; }
+  /* —— 武器库 / 怪物库视图（共用 .abar/.agroup/.wcell/.adetail 组件） —— */
+  #arsenalView, #bestiaryView { padding:10px 12px; }
+  /* 已遭遇但未击败：灰调（由 JS 叠灰色），亮度介于"暗剪影"与"彩色"之间 */
+  .wcell.seen { opacity:.72; }
   /* 收集进度：按各稀有度数量比例分段（不是等宽彩条） */
   .abar { display:flex; gap:2px; height:8px; margin:0 0 7px; }
   .abar > span { flex:1 1 0; background:var(--line); border-radius:4px; overflow:hidden; }
@@ -119,6 +121,7 @@
 <div class="tabs">
   <button id="tabBattle" class="tab active">⚔ 战斗</button>
   <button id="tabArsenal" class="tab">🎒 武器库</button>
+  <button id="tabBestiary" class="tab">📖 怪物库</button>
 </div>
 <div id="battleView">
   <div class="wrap">
@@ -153,6 +156,7 @@
         <span class="hp"><i id="hpbar"></i></span>
         <span id="hpnum">--/--</span>
         <span class="ename" id="ename">—</span>
+        <span class="wpn" id="atk"></span>
         <span class="wpn" id="wpn"></span>
       </div>
       <div class="log" id="log">Nibble 待命中…</div>
@@ -181,6 +185,18 @@
     </div>
   </div>
   <div id="agroups"></div>
+</div>
+<div id="bestiaryView" class="hidden">
+  <div class="abar" id="bbar"><span><i></i></span><span><i></i></span><span><i></i></span></div>
+  <div class="alegend" id="blegend"></div>
+  <div class="adetail" id="bdetail">
+    <canvas id="bdetailIcon" width="24" height="24"></canvas>
+    <div class="atext">
+      <div class="aname" id="bdetailName">—</div>
+      <div class="astory" id="bdetailStory">点选下方格子，查看这只怪物的「Bug 纪要」</div>
+    </div>
+  </div>
+  <div id="bgroups"></div>
 </div>
 <!--PET_JS-->
 </body>

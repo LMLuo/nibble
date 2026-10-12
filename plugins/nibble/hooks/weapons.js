@@ -96,10 +96,25 @@ const WEAPONS = [
   { id: 'genesis_commit', name: '创世提交·初始哈希', rarity: 'legendary' },
 ]
 
+// 战力：按稀有度定档的**百分比攻击加成**（同档拉平，避免"最强武器"焦虑与 80 条数值维护）
+// 见 docs/游戏升级规划/07-武器库收集系统设计.md「战力系统」
+const WEAPON_POWER = { common: 8, rare: 15, epic: 25, legendary: 40 }
+
 const WEAPON_INDEX = {}
 for (const w of WEAPONS) {
   WEAPON_INDEX[w.id] = w
   w.story = STORIES[w.id] || '' // 回忆杀小故事（weapons-stories.js）
+  w.power = WEAPON_POWER[w.rarity] || 0 // 战力：百分比攻击加成
+}
+
+// 已拥有武器里战力最高的一把（同战力按 WEAPONS 顺序取第一把，结果稳定可复现）
+function bestOwnedWeapon(owned) {
+  let best = null
+  for (const w of WEAPONS) {
+    if (!owned || !owned[w.id]) continue
+    if (!best || w.power > best.power) best = w
+  }
+  return best
 }
 
 const WEAPON_TOTAL = WEAPONS.length
@@ -189,4 +204,6 @@ function weaponSpriteGrid(id, mode) {
 module.exports = {
   WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, RARITY_DROP, PITY_LIMIT, rollWeapon,
   weaponSpriteGrid, WEAPON_PIXEL_DATA,
+  // 战力（百分比攻击加成）：稀有度定档 + 已拥有最强武器查找
+  WEAPON_POWER, bestOwnedWeapon,
 }
