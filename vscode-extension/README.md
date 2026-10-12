@@ -1,19 +1,54 @@
 # Nibble · 住在编辑器里的像素小狗
 
-一只住在**底部面板**与**状态栏**的像素小狗：你每次向 AI 提问（或保存文件），它就**打一只怪**——
-升级、掉武器、收集图鉴，等级与进度**跨会话保存**。
+**提问即攻击。** 你每次向 AI 提问（或保存文件），这只住在**底部面板 / 状态栏**的像素小狗就自动打掉一只
+「编程 Bug」怪——升级、掉武器、收集图鉴，等级与进度**跨会话保存**。常驻、自动动画、**零 token**。
 
 <!-- 图片用绝对地址：扩展在仓库子目录 vscode-extension/ 下，
      vsce 自动重写的相对路径会漏掉这一层（会 404），所以这里手写 raw 链接。改图请同步路径。 -->
-<p><img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/player-pixel.png" width="120" alt="Nibble 像素小狗"></p>
+<p align="center">
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/panel-preview.png" width="720"
+       alt="Nibble 底部面板：像素小狗对上精英怪「竞态幽灵」，装备栏挂着「重构之刃 +15%」，日志显示刚打出的伤害">
+</p>
+
+<sub>在 CodeBuddy / VSCodium 等编辑器的扩展面板搜索 <b>Nibble</b> 即可安装（Open VSX）。</sub>
 
 ## 它是谁：我的狗「拾玖」
 
 游戏里这只像素小狗，是照着我家的狗画的——**约克夏串串**，名字叫 **拾玖**。
 
-<p><img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/dog-shijiu.jpg" width="280" alt="拾玖的照片"></p>
+<p>
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/player-pixel.png" width="120" alt="Nibble 像素小狗">
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/dog-shijiu.jpg" width="280" alt="拾玖的照片">
+</p>
 
 把它的照片手工点成 24×24 像素（11 色），就成了游戏里的样子。它平时陪我写代码，现在也顺便帮你打工。
+
+## 40 只怪物，全是真 Bug
+
+名字不是编的，全是你大概率踩过的坑：
+
+- **小怪（20）**：空指针幽灵 / 无尽轮回蛇 / 差一错虫 / 类型混搭兽 / 未定义影 / 越界游魂 / 乱码兽 / 未捕获异常魔 /
+  浮点误差团 / 变量遮蔽妖 / 回调地狱犬 / 复读机怪 / 魔数精 / TODO 僵尸 / 硬编码石人 / 全局污染粘液 /
+  拼写错误鬼 / 分号伏击者 / 时区错位兽 / BOM 头蠕虫
+- **精英（14）**：内存泄漏巨蟒 / 竞态幽灵 / 死锁蛛 / 栈溢出巨龙 / N+1 查询兽 / 幽灵依赖 / 不稳定测试兽 /
+  循环依赖衔尾蛇 / 缓存失效魔 / 悬空指针 / 句柄泄漏水蛭 / 编码噩梦 / 时钟漂移 / 静默失败幽灵
+- **头目（6）**：段错误泰坦 / 熵增病毒 / 祖传代码巨像 / 级联雪崩 / 位腐古神 / 技术债奇点
+
+每一只都配了一段「Bug 纪要」，写的是它干过的真实事：
+
+> 两个线程同时进门，谁先谁后全看运气。它只在发版那天、只在周五 17:59 出现，复现率 0.03%。关掉日志它就消失，打开日志它就不来。
+> ——「竞态幽灵」（精英 · 闪避 20%）
+
+> 「暂时这么写，下周重构」。它已经这样躺了三年，注释都褪色了，代码还活得好好的。它是最长寿的临时方案。
+> ——「TODO 僵尸」（小怪）
+
+> 利息一直在滚。快速上线、临时绕过、下不为例，一圈圈绕成了吞掉整支团队的奇点。它集齐了所有 bug 的形态——因为所有 bug 都是它的碎片。
+> ——「技术债奇点」（头目）
+
+<p align="center">
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/bestiary-preview.png" width="820"
+       alt="Nibble 怪物库：40 只「编程 Bug」怪物按小怪 / 精英 / 头目分组，未遭遇为暗剪影、已遭遇为灰调、已击败为彩色，详情卡正显示竞态幽灵的 Bug 纪要">
+</p>
 
 ## 功能
 
