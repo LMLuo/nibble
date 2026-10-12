@@ -2,9 +2,13 @@
 
 [![Open VSX version](https://img.shields.io/open-vsx/v/nibble/nibble)](https://open-vsx.org/extension/nibble/nibble)
 [![Open VSX downloads](https://img.shields.io/open-vsx/dt/nibble/nibble)](https://open-vsx.org/extension/nibble/nibble)
+[![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-lmluo.github.io%2Fnibble-4ECDC4)](https://lmluo.github.io/nibble/)
 
 一只像素小狗，住在 **CodeBuddy / VS Code** 的**状态栏**和**底部面板**里。
 你每次向 AI 提问（或保存文件），它就**打一只怪**——升级、掉武器、收集图鉴，进度跨会话保存。
+
+**👉 官网（不用装就能玩）：[lmluo.github.io/nibble](https://lmluo.github.io/nibble/)**
+把一句报错丢进去，看它变成哪只怪、拾玖当场开打——纯在浏览器里算，不上传、不联网。
 
 <p><img src="docs/player-pixel.png" width="140" alt="Nibble 像素小狗"></p>
 
@@ -66,6 +70,7 @@
 
 | 想看什么 | 去哪 |
 |---|---|
+| 官网 + 在线演示（不用装就能玩） | [lmluo.github.io/nibble](https://lmluo.github.io/nibble/) |
 | 怎么发版：改版本号 → 打 tag → CI 自动上架 | [`PUBLISHING.md`](PUBLISHING.md) |
 | 玩法升级规划：武器库 / 装备 / 进化 / 收集设计 | [`docs/游戏升级规划/`](docs/游戏升级规划/) |
 | 素材来源与版权（含拾玖照片的许可口径） | [`legacy-mods/CREDITS.md`](legacy-mods/CREDITS.md) |
