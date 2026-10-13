@@ -183,6 +183,7 @@ function buildDemoData() {
   const sp = require(path.join(ROOT, 'plugins', 'nibble', 'hooks', 'nibble.js'))
   const en = require(path.join(ROOT, 'plugins', 'nibble', 'hooks', 'enemies.js'))
   const wp = require(path.join(ROOT, 'plugins', 'nibble', 'hooks', 'weapons.js'))
+  const px = require(path.join(ROOT, 'plugins', 'nibble', 'hooks', 'pixels.js'))
 
   const enemies = sp.ENEMIES.map((e) => ({
     id: e.id,
@@ -238,6 +239,8 @@ function buildDemoData() {
       weaponTotal: sp.WEAPON_TOTAL,
       weaponPower: sp.WEAPON_POWER,
       pityLimit: sp.PITY_LIMIT,
+      // 主角像素图的色数（换素材后会变，所以页面上的数字从这里取，不写死）
+      playerColors: px.PIXEL_DATA.player.palette.length,
       dropOdds: wp.RARITY_DROP,
       xpNeed: sp.xpNeed(DEMO.level),
       baseHp: en.BASE_HP(DEMO.level),
@@ -303,6 +306,7 @@ function fill(tpl, data) {
     '{{ENEMY_TOTAL}}': m.enemyTotal,
     '{{WEAPON_TOTAL}}': m.weaponTotal,
     '{{PITY_LIMIT}}': m.pityLimit,
+    '{{PLAYER_COLORS}}': m.playerColors,
     '{{BUILD_DATE}}': data.generatedAt,
     '{{ENEMY_STATS}}': stats,
     '{{ENEMY_WALL}}': wall,

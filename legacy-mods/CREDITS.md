@@ -6,17 +6,19 @@
 源图存于 `assets/*.png`（仅构建期使用，**不是运行时依赖**），由 `tools/png2grid.mjs` 转成
 24×24 颜色网格后**内联**进 `hooks/pixels.js`（运行时零图片依赖、零第三方依赖）。
 
-> **玩家小生物的素材来源已变更（2026-10-10）**：原「青色史莱姆灵」被替换为**垂耳小狗**。
-> 小狗像的源图 `assets/player.png` 是作者**自摄照片**（`assets/player-source-dog.jpg`）经
-> 抠图 + 手工像素化（24×24、11 色、16 级量化对齐）得到，属于作者本人的作品。
+> **玩家小生物的素材来源（2026-10-13 更新）**：形象是作者的爱犬**拾玖**（约克夏串串）。
+> 当前这版 `assets/player.png`（24×24、19 色、16 级量化对齐）由 AI 按拾玖的样子绘制的像素画
+> （源图 `assets/player-source-pixel.jpg`）经 `tools/player-sprite.py` 转换得到：抠背景 → 块内多数票降采样
+> → 调色板取自源图自身的 k-means 聚类（保住黄褐/奶白/深棕的层次）→ 手工补眼睛高光/瞳孔/鼻头。
 > **该素材随本扩展按 MIT 授权**（与代码同一份 `vscode-extension/LICENSE`，因此不在上面的 CC0 声明范围内）：
 > 可自由使用、修改、再分发，保留版权声明即可，不额外附加限制。
 > 其余 3 张敌人素材、武器素材与 HP 条/日志字符仍以 CC0 发布，不受影响。
-> 原史莱姆灵源图仍在 git 历史（commit `ac269c8`）里。
+> 历史：原「青色史莱姆灵」源图见 commit `ac269c8`；2026-10-10 起的「照片手工像素化」版
+> （`assets/player-source-dog.jpg` + 旧 `tools/player-sprite.py`）仍在 git 历史里，库内不再被管线引用。
 
 | 素材 | 源文件 | 作者 | 许可证 | 是否需署名 |
 |------|--------|------|--------|------------|
-| 玩家小生物（垂耳小狗） | `assets/player.png`（源照片 `assets/player-source-dog.jpg`） | 作者自摄照片 → 手工像素化 | **MIT（与代码同许可；非 CC0）** | 是（保留版权声明） |
+| 玩家小生物（垂耳小狗「拾玖」） | `assets/player.png`（源图 `assets/player-source-pixel.jpg`） | 本项目（AI 生成原创像素画，按作者爱犬绘制） | **MIT（与代码同许可；非 CC0）** | 是（保留版权声明） |
 | 野生敌人：蝙蝠 | `assets/bat.png` | 本项目（AI 生成原创） | CC0 | 否 |
 | 野生敌人：史莱姆 | `assets/slime.png` | 本项目（AI 生成原创） | CC0 | 否 |
 | 野生敌人：宝箱怪 | `assets/mimic.png` | 本项目（AI 生成原创） | CC0 | 否 |
@@ -31,7 +33,7 @@
 | 依赖 | 版本 | 许可证 | 用途 | 是否进入运行时 |
 |------|------|--------|------|----------------|
 | pngjs | ^7.0.0 | MIT | 读取/写出 PNG（素材转换） | **否**（仅构建期 `tools/png2grid.mjs` 使用） |
-| Pillow（Python） | ≥ 9 | HPND | 渲染主角设计稿 `tools/player-sprite.py` → `assets/player.png` | **否**（仅构建期使用） |
+| Pillow（Python） | ≥ 9 | HPND | 把主角的 AI 像素源图转成 `assets/player.png`（`tools/player-sprite.py`） | **否**（仅构建期使用） |
 
 ## 关于 Spinlings（设计灵感来源）
 

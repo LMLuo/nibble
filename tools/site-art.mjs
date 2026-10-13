@@ -28,7 +28,7 @@ const SRC = path.join(ROOT, 'legacy-mods', 'assets', 'dog.png')
 const OUT_OG = path.join(ROOT, 'site', 'og.png')
 const OUT_PORTRAIT = path.join(ROOT, 'legacy-mods', 'preview', 'shijiu-portrait.png')
 
-const MAX_COLORS = 14 // 对齐游戏内精灵的 11 色观感；够表现黑鞍/黄褐/奶白三块即可
+const MAX_COLORS = 14 // 对齐游戏内精灵的色数观感（主角 19 色）；够表现黑鞍/黄褐/奶白三块即可
 const PORTRAIT_SCALE = 8 // 立绘预览的放大倍数（整数倍，像素不糊）
 const OG = { w: 1200, h: 630, bg: [0x13, 0x1a, 0x26], line: [0x20, 0x2b, 0x42], edge: [0x32, 0x40, 0x5c] }
 

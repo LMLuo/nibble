@@ -18,9 +18,11 @@
 
 | 路径 | 说明 | 为什么保留 |
 |---|---|---|
-| `assets/*.png` | 4 张像素源图（player / bat / slime / mimic）。其中 bat / slime / mimic 为 **AI 原创**；player 自 2026-10-10 起是**作者自摄的小狗照片手工像素化**产物（源照片见 `assets/player-source-dog.jpg`） | 这些图**无法精确重现**，是全部游戏形象的源头 |
+| `assets/*.png` | 4 张像素源图（player / bat / slime / mimic），**均为 AI 原创像素画**。其中 player（垂耳小狗「拾玖」）由 `assets/player-source-pixel.jpg` 经 `tools/player-sprite.py` 转出 | 这些图**无法精确重现**，是全部游戏形象的源头 |
+| `assets/player-source-pixel.jpg` | 主角的 AI 像素源图（1080×1080，背景棋盘格被烤进画面且存成了 JPEG） | 不可再生；主角形象的真源，换形象就是换它 |
+| `assets/player-source-dog.jpg` | **旧**主角（2026-10-10 版）的源照片，当前管线已不再引用 | 照片不可再生，留存备查（git 历史里也有） |
 | `tools/png2grid.mjs` | 把源图转成 24×24 调色板网格的工具（纯 CLI 参数驱动） | 换素材 / 重制形象的唯一工具链（需 `pngjs`，仅构建期） |
-| `tools/player-sprite.py` | 主角 `player.png` 的**可编辑设计稿**（字符网格 + 调色板 → 渲染成 24×24 RGBA） | 手改 PNG 不现实；改这个脚本即可重制主角形象（需 Pillow，仅构建期） |
+| `tools/player-sprite.py` | 主角生成器：AI 源图 → 抠背景 → 块内多数票降采样 → 调色板取源图自身的 k-means 聚类 → 去孤立点 → 补眼睛/鼻头 → 24×24 RGBA（`TOUCHUP` 是唯一的人工修正点） | 手改 PNG 不现实；换主角形象 = 换源图 + 调 `TOUCHUP`（需 Pillow，仅构建期） |
 | `pixels/_pixels.gen.txt` | 上述工具的输出（调色板 + 网格数据） | 留着它，即使不装 `pngjs` 也能重建 `pixels.js` |
 | `reference/register.ts` | Mods 版的完整实现 | 仅作参考留档（它跑不起来；删掉不可恢复，故低成本留存） |
 | `CREDITS.md` | 素材署名与版权声明 | 许可与出处凭证 |
@@ -44,9 +46,13 @@ vscode-extension/lib/pixels.js             （构建产物，gitignore，打包�
 
 ## 想换素材怎么办
 
-0. **若改的是主角**：直接改 `legacy-mods/tools/player-sprite.py` 里的字符网格，
-   然后 `python legacy-mods/tools/player-sprite.py` 重新生成 `assets/player.png`
-   （它会校验内容框是否是 22×20 —— 这个尺寸下 `png2grid` 才不会重采样）。
+0. **若改的是主角**：换掉 AI 像素源图 `legacy-mods/assets/player-source-pixel.jpg`，
+   然后 `python legacy-mods/tools/player-sprite.py` 重新生成 `assets/player.png`。
+   观感不对时：`--dump` 打印 24×24 网格（键 0 = 最暗色，按亮度排序），
+   调脚本里的 `TOUCHUP`（眼睛高光/瞳孔/鼻头）、`--colors 20`（调色板簇数）或 `--body 20x22`。
+   两个**别乱开**的开关：`--flatten`（邻域众数滤波，会把 1 格宽的细节一起抹掉）与 `--outline edge`
+   （源图自带描边，再涂一圈会盖掉最外一圈的块面）—— 它们是上一版"跟源图差距大"的原因，留作备用。
+   脚本会校验内容框的最大边是否为 22 —— 只有这时 `png2grid` 才是恒等变换、不重采样。
    若改的是敌人，走下面第 1 步。
 1. 把新图放进 `legacy-mods/assets/`（或直接覆盖现有 PNG）
 2. 在**仓库根**（`nibble-cb/`）装构建期依赖：`npm i -D pngjs`

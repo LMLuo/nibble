@@ -28,5 +28,8 @@ legacy-mods/assets/monsters/cells/
 legacy-mods/preview/
 legacy-mods/tools/preview/
 
+# Python 构建期工具（legacy-mods/tools/player-sprite.py）的字节码缓存
+__pycache__/
+
 *.log
 .DS_Store
