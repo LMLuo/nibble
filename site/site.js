@@ -220,7 +220,7 @@
   )
 
   function buildSky() {
-    const root = document.getElementById('scene')
+    const root = document.getElementById('heroScene')
     if (!root) return
     const W = Math.max(360, Math.round(root.clientWidth))
     const H = Math.max(360, Math.round(root.clientHeight))
@@ -964,7 +964,8 @@
 
   /* ------------------------------------------------------------ 2) 演示驱动 */
   const D = window.NIBBLE_DEMO
-  const hasDemo = !!(D && D.meta && D.enemies && D.weapons && document.getElementById('player'))
+  // 演示面板存在性探测：旧结构是 #player canvas，场景化升级后改探 #scene（scene canvas）
+  const hasDemo = !!(D && D.meta && D.enemies && D.weapons && document.getElementById('scene'))
   if (!hasDemo) return
 
   const M = D.meta
@@ -1085,6 +1086,9 @@
     battles: 0,
     defeats: 0,
     enemy: null,
+    // 连击（与扩展 nibble.js 的 STREAK 规则一致：≤10 分钟连续；断连静默归一）
+    // 初始给 8 连：演示自动攻击两下内就能看到「起势」光环与 ×N 徽标，访客不用干等 22 秒
+    streak: { count: 8, lastAt: Date.now() },
     arsenal: { owned: Object.assign({}, D.demo.owned), pity: D.demo.pity },
     equipped: null,
     lastDrop: null,
@@ -1112,12 +1116,29 @@
 
   /* —— 一次攻击：nibble.js attack() 的浏览器端复刻 —— */
   let pendingDrop = null
+
+  // 连击档位与加成（照抄 nibble.js 的常量：<10 隐形；≥10 起势每连 +1% 封顶 +30%；≥25 燃；≥50 超载）
+  const STREAK_WINDOW = 10 * 60 * 1000
+  function streakOf() {
+    const now = Date.now()
+    const cnt = now - s.streak.lastAt <= STREAK_WINDOW ? s.streak.count : 0
+    const tier = cnt >= 50 ? 3 : cnt >= 25 ? 2 : cnt >= 10 ? 1 : 0
+    const bonus = cnt >= 10 ? Math.min(10 + (cnt - 10), 30) : 0
+    return { count: cnt, tier: tier, bonus: bonus }
+  }
+
   function attack() {
     const e = s.enemy
     const info = ENEMY[e.type]
     const mech = info.mech || {}
     const w = shownWeapon()
-    const atk = Math.max(1, playerAtk(s.level) * (1 + (w ? w.power : 0) / 100))
+    // 连击：本次攻击先计入，再按新连击结算（与扩展 attack() 同序）
+    const now = Date.now()
+    s.streak.count = now - s.streak.lastAt <= STREAK_WINDOW ? s.streak.count + 1 : 1
+    s.streak.lastAt = now
+    const sk = streakOf()
+    const tag = sk.tier ? '（×' + sk.count + ' 连击' + (sk.tier >= 3 ? ' · 超载' : sk.tier >= 2 ? ' · 火力全开' : '') + '）' : ''
+    const atk = Math.max(1, playerAtk(s.level) * (1 + ((w ? w.power : 0) + sk.bonus) / 100))
     s.battles += 1
 
     let dmg = Math.max(1, Math.round(atk * (0.9 + rnd() * 0.2)))
@@ -1138,10 +1159,11 @@
       }
     }
     e.hp = Math.max(0, e.hp - dmg)
+    s.lastDmg = dmg // 伤害飘字用（0 = 未命中）
     const note = notes.length ? '（' + notes.join('·') + '）' : ''
 
     if (e.hp > 0) {
-      let log = 'Nibble 攻击！' + info.name + ' -' + dmg + ' HP' + note
+      let log = 'Nibble 攻击！' + info.name + ' -' + dmg + ' HP' + note + tag
       if (mech.regen) {
         const healed = Math.min(mech.regen, e.maxHp - e.hp)
         if (healed > 0) {
@@ -1179,13 +1201,15 @@
       ups += 1
     }
 
-    let log = '击败 ' + info.name + '（' + info.tierLabel + '·' + M.rarityLabel[e.rarity] + '）！'
+    let log = '击败 ' + info.name + '（' + info.tierLabel + '·' + M.rarityLabel[e.rarity] + '）！' + tag
     log += firstTime ? '🆕 收录进怪物库' : '怪物库 ×' + s.bestiary.defeated[e.type]
     log += ' +' + gain + 'XP'
     if (ups > 0) log += '　⬆ 升级 Lv ' + s.level + '！'
 
     const drop = rollWeapon(s.arsenal.pity)
     s.arsenal.pity = drop.pity
+    // ≥25 连「燃」：保底额外推进 1 步（与扩展一致）
+    if (sk.tier >= 2) s.arsenal.pity = Math.min(M.pityLimit, s.arsenal.pity + 1)
     s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
     s.lastDrop = { id: drop.weapon.id, at: Date.now() }
     log += '　✦ 获得 ' + drop.weapon.rarityLabel + '·' + drop.weapon.name + '！'
@@ -1254,7 +1278,12 @@
       battles: s.battles,
       defeats: s.defeats,
       log: s.lastLog,
-      key: e.type + '|' + e.rarity + '|' + e.maxHp + '|' + s.battles + '|' + (s.equipped || '') + '|' + (w ? w.id : ''),
+      // 连击（面板光环/徽标/飘字用）；key 带上连击数，涨连击也要推新 state
+      streak: streakOf().count,
+      streakTier: streakOf().tier,
+      streakBonus: streakOf().bonus,
+      lastDmg: Math.max(0, Number(s.lastDmg) || 0),
+      key: e.type + '|' + e.rarity + '|' + e.maxHp + '|' + s.battles + '|' + (s.equipped || '') + '|' + (w ? w.id : '') + '|' + streakOf().count,
       arsenal: summary,
       weaponSprite: w ? weaponSprite(w.id) : null,
       weaponName: w ? w.name : null,
@@ -1303,6 +1332,7 @@
   let lastBattles = -1
   let lastDefeats = -1
   let lastKey = ''
+  let lastStreakTier = -1
 
   function beat() {
     const st = buildState()
@@ -1313,11 +1343,15 @@
     lastDefeats = st.defeats
     if (lungeTicks > 0) lungeTicks--
     if (dissolveTicks > 0) dissolveTicks--
+    // 超载演出：连击档位「跨入 ≥50」的那一次推一条 burst（与 extension.js 同规则）
+    const burst = lastStreakTier >= 0 && lastStreakTier < 3 && st.streakTier >= 3
+    lastStreakTier = st.streakTier
 
     if (st.key !== lastKey) {
       lastKey = st.key
       post(Object.assign({ type: 'state' }, st))
     }
+    if (burst) post({ type: 'burst', combo: st.streak })
     if (pendingDrop) {
       post(pendingDrop)
       pendingDrop = null

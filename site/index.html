@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nibble · 住在编辑器里的像素小狗（提问即攻击）</title>
-<meta name="description" content="一只像素小狗住在 CodeBuddy / VS Code 的状态栏和底部面板里。你每提一次问，它就替你打一只怪——升级、掉武器、收图鉴，进度跨会话保存。">
+<meta name="description" content="一只像素小狗住在 CodeBuddy / VS Code 的状态栏和底部面板里。你每提一次问，它就替你打一只怪——升级、掉武器、收图鉴，连续提问还会点亮连击光环，进度跨会话保存。">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0D0F14">
 <!-- 社交分享卡片（微信 / Twitter / Discord 抓这一组）。
@@ -31,6 +31,7 @@
   本页不做数据收集：不引任何第三方脚本、不引外部字体，只有下方的 QR 图是本地文件。
 -->
 <link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="scene.css">
 </head>
 <body>
 
@@ -63,11 +64,11 @@
   <section class="hero">
     <!-- 像素天空场景：全部由 site.js 用 SVG 现画（星/代码塔/山脊/丘陵/草）+ CSS 硬边色带，
          单位 = 1 CSS px 天然像素对齐，不需要任何图片素材 -->
-    <div class="scene" id="scene" aria-hidden="true"></div>
+    <div class="scene" id="heroScene" aria-hidden="true"></div>
     <div class="wrap hero-in">
       <p class="kicker"><span class="pt pt-sm" data-pt="PIXELPET">PIXEL PET</span><span class="blink">●</span> 运行中</p>
       <h1>提问<span class="hl">即</span>攻击</h1>
-      <p class="lede">一只像素小狗，住在 <b>CodeBuddy / VS Code</b> 的状态栏和底部面板里。你每问一句 AI（或保存一次文件），它就替你打一只怪——升级、掉武器、收图鉴，进度跨会话保存。</p>
+      <p class="lede">一只像素小狗，住在 <b>CodeBuddy / VS Code</b> 的状态栏和底部面板里。你每问一句 AI（或保存一次文件），它就替你打一只怪——升级、掉武器、收图鉴，进度跨会话保存。连续提问还会累积<b>连击</b>：光环在脚下亮起，专注看得见。</p>
       <ul class="chips">
         <li>常驻底部面板</li>
         <li>自动待机动画</li>
@@ -94,39 +95,43 @@
         </div>
         <div class="panel">
           <div id="battleView">
-            <div class="stage">
-              <canvas id="player" width="24" height="24" aria-label="Nibble 像素小狗（拾玖）"></canvas>
-              <div class="slotWrap">
-                <button type="button" class="slot empty" id="slot" title="点击去武器库选择武器">
+            <!-- 与扩展 panel.html 同构的场景化战斗页（scene.js 绘制；无 #nav：官网已有 tabs）-->
+            <div class="sceneWrap stage" id="sceneWrap">
+              <canvas id="scene"></canvas>
+              <div class="hud" id="hud">
+                <div class="actor" id="hudPlayer">
+                  <span class="aname">拾玖 <b id="lv">Lv 1</b><b class="combo hidden" id="comboBadge">×12</b></span>
+                  <span class="hbar"><i id="expbar"></i></span>
+                </div>
+                <div class="actor" id="hudEnemy">
+                  <span class="aname" id="ename">—</span>
+                  <span class="hbar enemy"><i id="hpbar"></i></span>
+                </div>
+                <div class="dmg hidden" id="dmg"></div>
+              </div>
+              <div class="wslotWrap" id="wslotWrap">
+                <div class="wslot empty" id="slot" title="点击去武器库选择武器">
                   <canvas id="weapon" width="24" height="24"></canvas>
                   <span class="ph">?</span>
-                </button>
-                <span class="slotName" id="slotName">未装备</span>
+                </div>
+                <span class="wname" id="slotName">未装备</span>
               </div>
-              <svg class="vs" width="28" height="28" viewBox="0 0 14 14" shape-rendering="crispEdges" aria-hidden="true">
-                <g fill="#FF6B6B">
-                  <rect x="1" y="1" width="2" height="2"/><rect x="3" y="3" width="2" height="2"/><rect x="5" y="5" width="2" height="2"/>
-                  <rect x="7" y="7" width="2" height="2"/><rect x="9" y="9" width="2" height="2"/><rect x="11" y="11" width="2" height="2"/>
-                  <rect x="11" y="1" width="2" height="2"/><rect x="9" y="3" width="2" height="2"/><rect x="7" y="5" width="2" height="2"/>
-                  <rect x="5" y="7" width="2" height="2"/><rect x="3" y="9" width="2" height="2"/><rect x="1" y="11" width="2" height="2"/>
-                </g>
-              </svg>
-              <canvas id="enemy" width="24" height="24" aria-label="当前怪物"></canvas>
-              <span class="ground" aria-hidden="true"></span>
-            </div>
-            <div class="info">
-              <div class="meta">
-                <span class="lv" id="lv">Lv 1</span>
-                <span class="hp"><i id="hpbar"></i></span>
-                <span class="hpnum" id="hpnum">--/--</span>
-                <span class="ename" id="ename">—</span>
-                <span class="wpn" id="atk"></span>
-                <span class="wpn" id="wpn"></span>
+              <div class="ops">
+                <span class="log" id="log">Nibble 待命中…</span>
+                <span class="opsBtns">
+                  <button type="button" id="attack">攻击一次</button>
+                </span>
+                <span class="wmeta wpn" id="atk"></span>
+                <span class="wmeta wpn" id="hpnum">--/--</span>
+                <span class="wmeta wpn" id="wpn"></span>
               </div>
-              <div class="log" id="log">Nibble 待命中…</div>
-              <div class="foot">
-                <button type="button" id="attack" class="btn btn-sm">攻击一次</button>
-                <span class="tip">在 IDE 里，你每提一次问 = 点一次这个按钮</span>
+              <div class="flash hidden" id="flash"></div>
+              <div class="comboFx hidden" id="comboFx">
+                <div class="comboBan">
+                  <i class="cbLine"></i>
+                  <div class="comboTxt"><span>COMBO</span><b id="comboNum">×50</b></div>
+                  <i class="cbLine"></i>
+                </div>
               </div>
             </div>
           </div>
@@ -163,7 +168,7 @@
         </div>
         <div id="toast"><canvas id="toastIcon" width="24" height="24"></canvas><span id="toastText"></span></div>
       </div>
-      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，或切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴。</p>
+      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，或切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴。在 IDE 里，你每提一次问 = 自动攻击一次，连续提问还会点亮连击。</p>
       <noscript><p class="demo-hint warn">这个演示需要 JavaScript；不开也能看到下面所有介绍。</p></noscript>
 
       <!-- 记忆点：把你今天遇到的 Bug 丢给它（在浏览器里现算，不上传、不联网） -->
@@ -215,7 +220,7 @@
         <article class="card">
           <span class="num">2</span>
           <h3>它出手</h3>
-          <p>小狗前冲、怪物掉血。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂；遭遇即自动收录进「📖 怪物库」。</p>
+          <p>小狗前冲、怪物掉血。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂；遭遇即自动收录进「📖 怪物库」。连续提问累积<b>连击</b>：≥10 连攻击最多 +30%、脚下亮起光环；≥25 连转亮金；≥50 连超载演出。断连静默归零，不惩罚。</p>
         </article>
         <article class="card">
           <span class="num">3</span>
@@ -253,8 +258,8 @@
       <h2>它长什么样</h2>
       <div class="shots">
         <figure class="shot">
-          <img src="panel-preview.png" width="880" height="295" alt="Nibble 战斗面板：像素小狗、装备槽、怪物、血条与战斗日志" loading="lazy">
-          <figcaption><b>⚔ 战斗</b>：小狗 + 装备槽 + 怪物 + 血条 + 战斗日志，一滴水都不占你屏幕。</figcaption>
+          <img src="panel-preview.png" width="880" height="295" alt="Nibble 战斗面板：像素场景中小狗脚下亮起连击光环、头顶挂着 ×12 徽标，对上精英怪，装备槽挂着武器" loading="lazy">
+          <figcaption><b>⚔ 战斗</b>：像素场景 + 连击光环 + 装备槽 + 战斗日志，一滴水都不占你屏幕。</figcaption>
         </figure>
         <figure class="shot">
           <img src="bestiary-preview.png" width="900" height="435" alt="Nibble 怪物库：40 只怪物按小怪/精英/头目分组的图鉴" loading="lazy">
@@ -410,6 +415,7 @@
 
 <script src="demo-data.js"></script>
 <script src="site.js"></script>
+<script src="scene.js"></script>
 <script src="pet.js"></script>
 </body>
 </html>

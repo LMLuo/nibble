@@ -27,6 +27,8 @@ const OUT_DIR = path.join(ROOT, '_site')
 // 官网直接复用的扩展素材（真源都在 vscode-extension/media/，这里只复制、不改写）
 const COPIES = [
   'pet.js', // 面板渲染器：官网首屏演示跑的就是它
+  'scene.js', // 战斗场景渲染（官网演示面板已升级为场景化战斗页）
+  'scene.css', // 场景与连击样式（同上）
   'panel-preview.png', // 战斗面板截图
   'bestiary-preview.png', // 怪物库截图
   'player-pixel.png', // 拾玖的 24x24 像素图

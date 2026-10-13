@@ -242,6 +242,12 @@ h1 .hl { color: var(--core); text-shadow: 5px 5px 0 #0f3b39; }
 .tab.active { color: var(--core); border-bottom-color: var(--core); }
 
 .panel { padding: 14px; max-height: 460px; overflow-y: auto; }
+
+/* —— 演示面板升级为场景化战斗页（scene.js + scene.css）——
+   scene.css 的 .sceneWrap 高度是 100%、#battleView 高度也是 100%，都依赖固定高的父容器；
+   官网 .panel 是内容撑开，必须在这里定高。scene.css 在 site.css 之后加载，
+   同特异性会覆盖，故用 !important。320px：足够 scene.js 取最大逻辑格（S=4）。 */
+#battleView { height: 320px !important; }
 #arsenalView, #bestiaryView { padding: 2px 0; }
 
 /* —— 战斗视图 —— */
