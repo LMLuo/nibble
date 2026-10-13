@@ -23,6 +23,7 @@ let lungeTicks = 0
 let dissolveTicks = 0
 let lastBattles = -1
 let lastDefeats = -1
+let lastStreakTier = -1
 let lastKey = ''
 let lastDropAt = -1
 let lastArsenalDefeats = -1
@@ -63,6 +64,7 @@ const flat = (grid) => {
 function buildState() {
   const s = sp.reloadSave()
   const arsenal = sp.arsenalSummary(s)
+  const sk = sp.streakState(s) // 连击（超 10 分钟窗口 = 0）
   const shown = sp.equippedWeapon(s) // 战斗页展示即生效：手动装备 → 否则自动取最高战力
   const weaponSprite = shown ? sp.weaponSpriteGrid(shown.id, true) : null
   const info = sp.enemyInfo(s.enemy.type)
@@ -86,9 +88,14 @@ function buildState() {
     battles: s.battles,
     defeats: s.defeats,
     log: s.lastLog || 'Nibble 待命中…（向 CodeBuddy 提问即可发动攻击）',
-    // 换武器 / 最高战力变化也要触发推送，故把生效武器一并计入 key
+    // 连击（面板光环/徽标用）：count 含窗口校验，过期自动回 0
+    streak: sk.count,
+    streakTier: sk.tier,
+    streakBonus: sk.bonus,
+    lastDmg: Math.max(0, Number(s.lastDmg) || 0), // 伤害飘字数值（0 = 未命中）
+    // 换武器 / 最高战力变化也要触发推送，故把生效武器一并计入 key；连击数同理（徽标实时更新）
     key: s.enemy.type + '|' + s.enemy.rarity + '|' + s.enemy.maxHp + '|' + s.battles +
-      '|' + (s.equipped || '') + '|' + (shown ? shown.id : ''),
+      '|' + (s.equipped || '') + '|' + (shown ? shown.id : '') + '|' + sk.count,
     arsenal,
     weaponSprite: weaponSprite ? flat(weaponSprite) : null,
     weaponName: shown ? shown.name : null,
@@ -163,6 +170,9 @@ function tick() {
   lastDefeats = st.defeats
   if (lungeTicks > 0) lungeTicks--
   if (dissolveTicks > 0) dissolveTicks--
+  // 超载演出：连击档位「跨入 ≥50」的那一次推一条 burst（断连后重新攒到会再触发一次）
+  const burst = lastStreakTier >= 0 && lastStreakTier < 3 && st.streakTier >= 3
+  lastStreakTier = st.streakTier
 
   // —— 状态栏（常驻，随攻击实时变化）——
   if (statusItem) {
@@ -172,7 +182,8 @@ function tick() {
       ' ' + st.hp + '/' + st.maxHp + ' ' + st.enemyName
     const last = st.arsenal.last
     statusItem.tooltip =
-      'Nibble · Lv' + st.level + '　攻击 ' + st.battles + ' 次　击败 ' + st.defeats + ' 次\n' + st.log +
+      'Nibble · Lv' + st.level + '　攻击 ' + st.battles + ' 次　击败 ' + st.defeats + ' 次' +
+      (st.streak >= sp.STREAK_T1 ? '　连击 ×' + st.streak + '（攻击 +' + st.streakBonus + '%）' : '') + '\n' + st.log +
       '\n⚔ 武器库 ' + st.arsenal.owned + '/' + st.arsenal.total + '　保底 ' + st.arsenal.pity + '/' + st.arsenal.pityLimit +
       (last ? '\n最近获得：' + sp.RARITY_LABEL[last.rarity] + '·' + last.name : '') +
       '\n（点击显示底部面板）'
@@ -185,6 +196,8 @@ function tick() {
     lastKey = st.key
     targets.forEach((w) => post(w, Object.assign({ type: 'state' }, st)))
   }
+  // 超载演出（场景闪白 + COMBO 横幅 + 数据块飞散）
+  if (burst) targets.forEach((w) => post(w, { type: 'burst', combo: st.streak }))
   // 掉落瞬间：推战利品消息（面板弹 toast，史诗以上带特效）
   const lastDrop = st.arsenal.last
   if (lastDrop && lastDrop.at && lastDrop.at !== lastDropAt) {
@@ -229,8 +242,13 @@ function tick() {
 
 function buildHtml(webview, inView) {
   const petJs = webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'pet.js')))
+  // 战斗场景是独立模块（scene.css / scene.js）：官网不加载它们，所以官网面板保持原样
+  const sceneCss = webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.css')))
+  const sceneJs = webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.js')))
   let html = fs.readFileSync(path.join(MEDIA(), 'panel.html'), 'utf8')
   html = html.replace('<!--PET_JS-->', '<script src="' + petJs + '"></script>')
+  html = html.replace('<!--SCENE_CSS-->', '<link rel="stylesheet" href="' + sceneCss + '">')
+  html = html.replace('<!--SCENE_JS-->', '<script src="' + sceneJs + '"></script>')
   if (inView) html = html.replace('<body>', '<body class="in-view">')
   return html
 }
@@ -248,6 +266,7 @@ function wireMessages(webview) {
       lastKey = ''
       lastArsenalDefeats = -1
       lastBestiaryKey = ''
+      lastStreakTier = -1
       tick()
     } else if (msg.type === 'equip') {
       try {
@@ -398,6 +417,7 @@ function activate(context) {
       lastKey = ''
       lastArsenalDefeats = -1
       lastBestiaryKey = ''
+      lastStreakTier = -1
       tick()
       vscode.window.showInformationMessage('♻️ Nibble 等级/经验/战绩已重置')
     }),

@@ -99,9 +99,12 @@ console.log('   状态栏文本: ' + calls.statusText)
 
 console.log('2) 停靠视图 HTML …')
 const vHtml = viewHolder.html || ''
-const okView = vHtml.includes('<canvas id="player"') && vHtml.includes('pet.js') && vHtml.includes('class="in-view"')
-console.log('   含 canvas: ' + vHtml.includes('<canvas id="player"'))
+// 战斗视图已从「两块角色小画布」换成「一整块场景画布 + 独立场景模块（scene.js）」
+const okView = vHtml.includes('<canvas id="scene"') && vHtml.includes('pet.js') &&
+  vHtml.includes('scene.js') && vHtml.includes('class="in-view"')
+console.log('   含场景 canvas: ' + vHtml.includes('<canvas id="scene"'))
 console.log('   已注入 pet.js: ' + vHtml.includes('pet.js'))
+console.log('   已注入 scene.js（新场景模块）: ' + vHtml.includes('scene.js'))
 console.log('   body 带 in-view（紧凑尺寸）: ' + vHtml.includes('class="in-view"'))
 
 console.log('3) 等待 tick（含一次攻击）…')

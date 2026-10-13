@@ -1,0 +1,168 @@
+/* scene.css — 战斗场景的样式（与 scene.js 配套）
+ *
+ * 只作用于「战斗视图」；武器库/怪物库两个视图的样式仍在 panel.html 里。
+ * 这条边界是刻意的：官网首屏复用 pet.js，但不加载本文件，所以官网面板保持原样。
+ */
+
+@font-face {
+  font-family: 'NibblePixel';
+  src: url('fonts/nibble-pixel.woff2') format('woff2');
+  font-display: block;
+}
+
+/* —— 战斗视图：整块换成「场景 + 浮层」结构 —— */
+#battleView { height: 100%; }
+.sceneWrap {
+  position: relative; height: 100%; overflow: hidden;
+  background: #150e0c; /* 首帧未绘制前的兜底底色 */
+}
+#scene {
+  position: absolute; left: 0; top: 0; display: block;
+  image-rendering: pixelated;
+}
+
+/* —— 头顶 HUD（位置由 scene.js 按角色逻辑坐标写进 style）—— */
+.hud { position: absolute; inset: 0; pointer-events: none; }
+.actor {
+  position: absolute; transform: translate(-50%, -100%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  white-space: nowrap;
+}
+.aname {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px;
+  color: #f4eee4;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .92), 0 0 3px rgba(0, 0, 0, .9);
+}
+.aname b { font-weight: normal; color: #ffe9a8; }
+/* 头顶的血条/经验条。注意类名必须与 HTML 一致（.hbar）——
+   panel.html 里的 .abar 是武器库的收集进度条，两者不能重名。 */
+.hbar {
+  display: block; width: 72px; height: 6px;
+  background: rgba(8, 5, 4, .62);
+}
+.hbar > i { display: block; height: 100%; width: 50%; background: #7cd44a; }
+
+/* —— 悬浮菜单：场景右上角一个 ≡，点开下拉浮层 ——
+   位置选右上角是因为主角在左、敌人在中右，那块只有天空，不会跟任何元素打架。 */
+/* fixed 而非 absolute：菜单是全局导航，切到武器库/怪物库后也要留在右上角 */
+.nav { position: fixed; right: 10px; top: 10px; z-index: 40; }
+.navBtn {
+  width: 30px; height: 26px; padding: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: rgba(8, 6, 6, .62); border: 2px solid rgba(0, 0, 0, .45);
+}
+.navBtn i { display: block; width: 14px; height: 2px; background: #cfc2ae; }
+.navBtn:hover { background: rgba(8, 6, 6, .8); }
+.navBtn:hover i { background: #f6ecda; }
+.navMenu {
+  position: absolute; right: 0; top: 100%; margin-top: 5px; display: none;
+  flex-direction: column; min-width: 108px; padding: 3px 0;
+  background: rgba(10, 8, 7, .92); border: 2px solid rgba(0, 0, 0, .55);
+}
+.navMenu.open { display: flex; }
+.navItem {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px;
+  color: #c2b4a0; background: transparent; border: none; padding: 7px 10px;
+  text-align: left; cursor: pointer;
+}
+.navItem:hover { color: #f4e8d2; background: rgba(255, 255, 255, .07); }
+/* .active 是 pet.js 现有的选中态类（它切视图时会 toggle），这里一并接上 */
+.navItem.on, .navItem.active { color: #17110a; background: var(--accent, #d8c08a); }
+.navItem b { font-weight: normal; opacity: .7; }
+
+/* —— 武器格子：场景左下角（大圆角 + 稀有度色描边与发光，样式按参考图）——
+   尺寸由 scene.js 按角色的同一套逻辑像素档位写进 --slot / --icon */
+.wslotWrap {
+  position: absolute; left: 12px; bottom: 46px; z-index: 2; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.wslot {
+  width: var(--slot, 62px); height: var(--slot, 62px);
+  border-radius: calc(var(--slot, 62px) / 4);
+  border: 2px solid #8a8a8a; background: rgba(10, 8, 12, .5);
+  display: flex; align-items: center; justify-content: center;
+}
+.wslot.empty { border-style: dashed; }
+.wslot.empty > canvas { display: none; }
+.wslot .ph { display: none; color: #4a5265; font-size: 18px; font-weight: 700; }
+.wslot.empty .ph { display: block; }
+#weapon {
+  width: var(--icon, 48px); height: var(--icon, 48px);
+  display: block; image-rendering: pixelated;
+}
+.wname {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px;
+  max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #ddd; text-shadow: 0 2px 0 rgba(0, 0, 0, .85);
+}
+
+/* —— 底部操作条：日志 + 按钮 + 武器数值 —— */
+.ops {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px;
+  background: rgba(10, 7, 6, .8); border-top: 2px solid #3a1c0d;
+}
+.log {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 14px;
+  color: #ded3c2; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wmeta {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 14px;
+  color: #b3a591; flex: 0 0 auto; white-space: nowrap;
+}
+/* 窄栏：HUD 条腾地方 —— 收起次要数值，保证日志和按钮不被挤压 */
+.sceneWrap.s3 #atk, .sceneWrap.s3 #hpnum { display: none; }
+.opsBtns { display: flex; gap: 6px; flex: 0 0 auto; }
+.opsBtns button {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px;
+  color: #ecdfcc; background: #2a1a12; border: 2px solid #4a2a18;
+  border-bottom-width: 4px; padding: 3px 9px; cursor: pointer;
+}
+.opsBtns button:hover { border-color: #8a5a2a; color: #ffe9c8; }
+.opsBtns button:active { transform: translateY(2px); border-bottom-width: 2px; }
+
+/* ============================================================
+   连击（Combo）—— 战斗视觉的强度刻度（详细口径见 docs/游戏升级规划/09）
+   三档：≥10 起势（主题色光环 + 徽标）→ ≥25 燃（亮金）→ ≥50 超载（一次性演出）。
+   <10 完全隐形；断连静默消失（只庆祝，不安慰）。
+   硬规矩：无圆角、硬边描边（不用模糊）、跳变显隐（不做过渡）。
+   ============================================================ */
+
+/* 头顶连击徽标：挂在玩家名字后。选择器要比 .aname b 更具体才能覆盖默认金色 */
+.aname b.combo {
+  font-family: 'NibblePixel', monospace; font-weight: normal;
+  margin-left: 6px; padding: 0 3px; color: #17110a; text-shadow: none;
+  background: var(--comboBg, #A6C674); border: 2px solid rgba(0, 0, 0, .5);
+}
+.aname b.combo.hot { border-color: #fff6d8; box-shadow: 0 0 8px rgba(255, 215, 94, .9); }
+
+/* 伤害飘字：怪物头顶，3 帧内阶梯上浮（每帧跳 1 格，无平滑过渡） */
+.dmg {
+  position: absolute; transform: translate(-50%, -100%);
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px; color: #fff;
+  text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 0 2px 0 rgba(0, 0, 0, .5);
+}
+.dmg.hot {
+  color: #ffd75e;
+  text-shadow: 2px 0 0 #3a2008, -2px 0 0 #3a2008, 0 2px 0 #3a2008, 0 -2px 0 #3a2008, 0 3px 0 rgba(0, 0, 0, .45);
+}
+
+/* 超载演出：全屏闪白 + 顶部像素横幅（扩展开关，约 1.6 秒后跳变消失） */
+.flash { position: absolute; inset: 0; z-index: 6; background: #fff; opacity: .24; pointer-events: none; }
+.comboFx {
+  position: absolute; inset: 0; z-index: 6; display: flex; justify-content: center;
+  padding-top: 20px; pointer-events: none;
+}
+.comboBan { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.cbLine { display: block; width: 148px; height: 3px; background: #ffd75e; box-shadow: 0 3px 0 rgba(60, 30, 4, .55); }
+.comboTxt { display: flex; align-items: baseline; gap: 8px; }
+.comboTxt span {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px; letter-spacing: 3px;
+  color: #fff6d8; text-shadow: 2px 0 0 #3a2008, -2px 0 0 #3a2008, 0 2px 0 #3a2008, 0 -2px 0 #3a2008;
+}
+.comboTxt b {
+  font-family: 'NibblePixel', monospace; font-weight: normal; font-size: 24px; line-height: 24px;
+  color: #ffd75e; text-shadow: 2px 0 0 #3a2008, -2px 0 0 #3a2008, 0 2px 0 #3a2008, 0 -2px 0 #3a2008, 0 4px 0 rgba(0, 0, 0, .4);
+}

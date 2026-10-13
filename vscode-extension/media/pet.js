@@ -57,7 +57,13 @@
   // 战斗日志：✦ 获得 的掉落片段按稀有度着色
   function setLog(text) {
     const el = $('log')
-    const txt = text || 'Nibble 待命中…'
+    // 清掉后端文案里的 emoji 与 markdown 星号：像素风里 emoji 破功（部分字体还会渲染成方块），
+    // 星号则是后端写日志时留下的（原本只在"✦ 获得"那一处做特殊处理）
+    const txt = (text || 'Nibble 待命中…')
+      .replace(/🆕/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
     const m = txt.match(/✦ 获得 (普通|稀有|史诗|传说)·(.+?)！/)
     const color = m ? RARITY_TEXT_COLOR[RARITY_KEY[m[1]]] : null
     if (m && color) {
@@ -74,9 +80,11 @@
     if (!state) return
     // 玩家：攻击时前冲 2px，待机时隔帧下沉 1px（上下浮动）
     const lunge = tick.lunge
-    drawSprite(canvasP, state.player, lunge ? 2 : 0, lunge ? 0 : (tick.frame ? 1 : 0), false)
+    // 新面板里角色由场景（scene.js）绘制，#player/#enemy 两个 canvas 已不存在 → 取空则跳过。
+    // 官网首屏复用本文件、它的 DOM 里这两个 canvas 还在，行为不变。
+    if (canvasP) drawSprite(canvasP, state.player, lunge ? 2 : 0, lunge ? 0 : (tick.frame ? 1 : 0), false)
     // 敌人：稀有度亮点闪烁 / 击败时隔帧消散
-    drawSprite(canvasE, state.enemy, 0, 0, tick.dissolve && tick.frame % 2 === 0)
+    if (canvasE) drawSprite(canvasE, state.enemy, 0, 0, tick.dissolve && tick.frame % 2 === 0)
     // 装备槽：单独格子展示当前携带的武器（已装备 → 否则跟随最近获得）
     if (canvasW) {
       const has = !!state.weaponSprite
@@ -97,16 +105,23 @@
     const atkEl = $('atk')
     if (atkEl) {
       const a = (state.arsenal && state.arsenal.atkTotal) || 0
-      atkEl.textContent = a ? '🗡 ' + a : ''
+      // 不用 emoji：彩色 emoji 在像素场景里最破功，而且部分字体下会渲染成方块
+      atkEl.textContent = a ? '攻击 ' + a : ''
     }
     const wpnEl = $('wpn')
     if (wpnEl) {
       wpnEl.textContent = state.weaponSprite
-        ? '⚔ ' + state.weaponName + ' +' + (state.weaponPower || 0) + '%'
+        ? state.weaponName + ' +' + (state.weaponPower || 0) + '%'
         : ''
     }
 
     $('lv').textContent = 'Lv ' + state.level
+    // 主角头顶的经验条（新面板用；旧面板没有这个节点，取空则跳过）
+    const expEl = $('expbar')
+    if (expEl) {
+      const need = Math.max(1, state.xpNeed || 1)
+      expEl.style.width = Math.max(0, Math.min(100, Math.round(((state.exp || 0) / need) * 100))) + '%'
+    }
     const ratio = Math.max(0, state.hp) / Math.max(1, state.maxHp)
     const bar = $('hpbar')
     bar.style.width = Math.round(ratio * 100) + '%'
@@ -553,6 +568,10 @@
     if (btnChange) btnChange.onclick = goChangeWeapon
   }
   bindTabs()
+  // 初始视图显式设一次：面板一打开就必须是战斗页。
+  // 不加这行时，本地预览曾出现首帧被判成 hidden、场景整个不可见的情况
+  // ——真机首帧由宿主消息驱动，本地预览没有宿主，需要这里兜底。
+  switchView('battle')
 
   if (hasHost) {
     window.addEventListener('message', (e) => onMessage(e.data || {}))

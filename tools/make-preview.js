@@ -46,7 +46,12 @@ const state = {
   rarityColor: sp.RARITY_COLOR.epic,
   battles: 128,
   defeats: 41,
-  log: 'Nibble 攻击！' + info.name + ' -14 HP（闪避）',
+  log: 'Nibble 攻击！' + info.name + ' -14 HP（×12 连击）',
+  // 连击演示值：预览页直接能看到「脚下光环 + 头顶徽标」（真机由扩展按存档推送）
+  streak: 12,
+  streakTier: 1,
+  streakBonus: 12,
+  lastDmg: 14,
   arsenal: sp.arsenalSummary({ level: 12, arsenal: { owned: { [wpn.id]: 1 }, pity: 13 }, lastDrop: null, equipped: null }),
   weaponSprite: flat(sp.weaponSpriteGrid(wpn.id, true)),
   weaponName: wpn.name,
@@ -108,7 +113,12 @@ function buildPreview() {
     '})();</script>\n' +
     '<script src="pet.js"></script>\n'
   const out = path.join(media, 'preview.html')
-  fs.writeFileSync(out, html.replace('</body>', inject + '</body>'), 'utf8')
+  // 新面板里的占位符：本地预览换成相对路径（真机由 extension.js 换成 asWebviewUri）
+  const filled = html
+    .replace('<!--SCENE_CSS-->', '<link rel="stylesheet" href="scene.css">')
+    .replace('<!--SCENE_JS-->', '<script src="scene.js"></script>')
+    .replace('</body>', inject + '</body>')
+  fs.writeFileSync(out, filled, 'utf8')
   console.log('✓ 已生成 ' + out + '（' + sp.ENEMY_TOTAL + ' 只怪物 mock）')
   return out
 }

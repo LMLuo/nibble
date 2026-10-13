@@ -231,6 +231,7 @@ function freshSave() {
     v: 1, level: 1, exp: 0, battles: 0, defeats: 0, lastLog: null, logKind: 'idle', enemy: null,
     arsenal: { owned: {}, pity: 0 }, lastDrop: null, equipped: null,
     bestiary: { seen: {}, defeated: {} },
+    streak: { count: 0, lastAt: 0 }, lastDmg: 0,
   }
 }
 
@@ -301,13 +302,58 @@ const xpNeed = (lv) => 20 + (lv - 1) * 15
 const playerAtk = (lv) => Math.round(4 + lv * 1.2)
 // 怪物 HP 由 enemies.js 的 tier / 稀有度 / 等级三重缩放给出（详见 08 文档「难度模型」）
 
-// 玩家实际攻击力 = 等级基础攻击 ×（1 + 生效武器战力%）
+// ============================ 连击（Streak）============================
+// 设计文档：docs/游戏升级规划/09-连击系统设计.md
+// 规则：连续提问（间隔 ≤ 10 分钟）累积连击；断连**静默归零、无任何惩罚**（只奖励连续）。
+// 效果：≥10 起势（+10% 攻击，每连 +1%，封顶 +30%）；≥25 燃（掉落保底额外推进）；
+//       ≥50 超载（面板一次性演出，由扩展侧比较档位跨越触发）。
+// 关键：<10 连对**画面与数值**都完全隐形——玩家照常写代码，连击自己累积。
+const STREAK_WINDOW = 10 * 60 * 1000
+const STREAK_T1 = 10
+const STREAK_T2 = 25
+const STREAK_T3 = 50
+const STREAK_MAX_BONUS = 30
+
+// 当前有效连击（超窗即视为 0，展示与生效同源；旧档/异常档静默归一）
+function streakState(s, now) {
+  const st = s && s.streak
+  const t = now || Date.now()
+  if (!st || !st.count || !st.lastAt || t - st.lastAt > STREAK_WINDOW) return { count: 0, bonus: 0, tier: 0 }
+  const count = Math.max(0, Number(st.count) || 0)
+  const bonus = count >= STREAK_T1 ? Math.min(STREAK_T1 + (count - STREAK_T1), STREAK_MAX_BONUS) : 0
+  const tier = count >= STREAK_T3 ? 3 : count >= STREAK_T2 ? 2 : count >= STREAK_T1 ? 1 : 0
+  return { count, bonus, tier }
+}
+
+// 本次攻击计入连击：窗口内 +1，超窗从 1 重新开始（不提示、不惩罚）
+function bumpStreak(s, now) {
+  const t = now || Date.now()
+  if (!s.streak || typeof s.streak !== 'object') s.streak = { count: 0, lastAt: 0 }
+  const cnt = Number(s.streak.count) || 0
+  s.streak.count = t - (Number(s.streak.lastAt) || 0) <= STREAK_WINDOW ? cnt + 1 : 1
+  s.streak.lastAt = t
+  return s.streak.count
+}
+
+// 日志尾标（<10 连返回空串：连击对文字也隐形）
+function streakTag(sk) {
+  if (!sk || !sk.tier) return ''
+  const tail = sk.tier >= 3 ? ' · 超载' : sk.tier >= 2 ? ' · 火力全开' : ''
+  return `（×${sk.count} 连击${tail}）`
+}
+
+// 玩家实际攻击力 = 等级基础 ×（1 + 武器战力% + 连击加成%）
 // ⚠️ atk 刻意保留小数：先取整会在低等级直接把 +8%/+15% 抹平（见 tools/balance-sim.js）
 function playerAtkWith(s) {
   const base = playerAtk(s.level)
   const w = equippedWeapon(s)
   const power = w ? w.power : 0
-  return { base, weapon: w, power, atk: Math.max(1, base * (1 + power / 100)) }
+  const sk = streakState(s)
+  return {
+    base, weapon: w, power,
+    streak: sk.count, streakBonus: sk.bonus, streakTier: sk.tier,
+    atk: Math.max(1, base * (1 + (power + sk.bonus) / 100)),
+  }
 }
 
 function rollRarity(lv) {
@@ -363,6 +409,12 @@ function loadSave() {
       if (typeof parsed.logKind === 'string') s.logKind = parsed.logKind
       s.arsenal = parseArsenal(parsed.arsenal)
       s.bestiary = parseBestiary(parsed.bestiary)
+      // 连击（旧档没有 → 默认 0 连）；lastDmg 只用于面板飘字
+      const st = parsed.streak
+      if (st && typeof st === 'object') {
+        s.streak = { count: Math.max(0, Number(st.count) || 0), lastAt: Math.max(0, Number(st.lastAt) || 0) }
+      }
+      s.lastDmg = Math.max(0, Number(parsed.lastDmg) || 0)
       if (parsed.lastDrop && typeof parsed.lastDrop === 'object' && WEAPON_INDEX[parsed.lastDrop.id]) {
         s.lastDrop = { id: parsed.lastDrop.id, at: Number(parsed.lastDrop.at) || 0 }
       }
@@ -398,7 +450,11 @@ function attack(s) {
   const enemy = s.enemy
   const info = enemyInfo(enemy.type)
   const mech = info.mech
-  const atk = playerAtkWith(s).atk // 等级基础攻击 × 生效武器战力%
+  // 连击：本次攻击先计入，再按新连击结算（≥10 起才有加成与文案）
+  bumpStreak(s)
+  const sk = streakState(s)
+  const tag = streakTag(sk)
+  const atk = playerAtkWith(s).atk // 等级基础 ×（1 + 武器战力% + 连击加成%）
   s.battles += 1
 
   // 伤害波动改为按比例（±10%）而非固定 ±2：低等级下固定抖动会淹没武器战力的差距
@@ -421,10 +477,11 @@ function attack(s) {
   }
   enemy.hp = Math.max(0, enemy.hp - dmg)
   const note = notes.length ? `（${notes.join('·')}）` : ''
+  s.lastDmg = dmg // 面板伤害飘字用（0 = 未命中，飘字跳过）
 
   // 未死：结算自愈
   if (enemy.hp > 0) {
-    let log = `Nibble 攻击！${info.name} -${dmg} HP${note}`
+    let log = `Nibble 攻击！${info.name} -${dmg} HP${note}${tag}`
     if (mech.regen) {
       const healed = Math.min(mech.regen, enemy.maxHp - enemy.hp)
       if (healed > 0) {
@@ -458,13 +515,15 @@ function attack(s) {
   markDefeated(s, enemy.type)
   const gain = 6 + Math.round(enemy.maxHp * 0.6)
   const ups = gainExp(s, gain)
-  let log = `击败 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[enemy.rarity]}）！`
+  let log = `击败 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[enemy.rarity]}）！${tag}`
   log += firstTime ? '🆕 收录进怪物库' : `怪物库 ×${b.defeated[enemy.type]}`
   log += ` +${gain}XP`
   if (ups > 0) log += `　⬆ 升级 Lv ${s.level}！`
   if (!s.arsenal) s.arsenal = parseArsenal(null)
   const drop = rollWeapon(s.arsenal.pity)
   s.arsenal.pity = drop.pity
+  // ≥25 连「燃」：掉落保底额外推进 1 步（加速保底，不改变单次掉落概率）
+  if (sk.tier >= 2) s.arsenal.pity = Math.min(PITY_LIMIT, s.arsenal.pity + 1)
   s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
   s.lastDrop = { id: drop.weapon.id, at: Date.now() }
   log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
@@ -504,7 +563,10 @@ function statusLine() {
   const name = fg(RARITY_COLOR[s.enemy.rarity]) + info.name + RESET
   const atk = playerAtkWith(s)
   const wpn = atk.power ? ' ' + fg(RARITY_COLOR[atk.weapon.rarity]) + '⚔+' + atk.power + '%' + RESET : ''
-  return `${pStr} ${sword} ${eStr}  ${lv} ${bar}  ${name}${wpn}`
+  // 连击（<10 连不显示：低侵入，平时状态栏看不见它）
+  const sk = streakState(s)
+  const combo = sk.tier ? ' ' + fg(sk.tier >= 2 ? '#FFD75E' : '#8FC7FF') + '×' + sk.count + RESET : ''
+  return `${pStr} ${sword} ${eStr}  ${lv} ${bar}${combo}  ${name}${wpn}`
 }
 
 // 战斗日志（供 hook systemMessage 使用，纯文本一行）
@@ -530,9 +592,10 @@ function card() {
     '```',
     ...rows,
     '```',
-    `**Lv ${s.level}** · XP ${s.exp}/${xpNeed(s.level)} · 出击 ${s.battles} 次 · 击败 ${s.defeats} 次`,
+    `**Lv ${s.level}** · XP ${s.exp}/${xpNeed(s.level)} · 出击 ${s.battles} 次 · 击败 ${s.defeats} 次` +
+      (sum.streak >= STREAK_T1 ? ` · 连击 ×${sum.streak}` : ''),
     `HP [${hp.bar}] ${hp.num}　野生 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）${mech}`,
-    `🗡 攻击 ${sum.atkTotal}（等级基础 ${sum.atkBase}${sum.shown ? ` ＋ ${RARITY_LABEL[sum.shown.rarity]}·${sum.shown.name} 战力 +${sum.shown.power}%` : ' · 未持武器'}）`,
+    `🗡 攻击 ${sum.atkTotal}（等级基础 ${sum.atkBase}${sum.shown ? ` ＋ ${RARITY_LABEL[sum.shown.rarity]}·${sum.shown.name} 战力 +${sum.shown.power}%` : ' · 未持武器'}${sum.streakBonus ? ` ＋ 连击 +${sum.streakBonus}%` : ''}）`,
     `⚔ 武器库 ${sum.owned}/${sum.total}　保底 ${sum.pity}/${sum.pityLimit}${sum.shown && !sum.equipped ? '　（自动·取最高战力）' : ''}`,
     `📖 怪物库 ${best.seen}/${best.total}（已击败 ${best.defeated}）`,
     `最近：${s.lastLog || '待命中'}`,
@@ -588,7 +651,9 @@ function arsenalSummary(s) {
     equipped: (s && s.equipped) || null, // 玩家手动装备的（null = 自动取最高战力）
     shown: shown ? { id: shown.id, name: shown.name, rarity: shown.rarity, power: shown.power } : null, // 当前生效/展示
     atkBase: atk.base, // 等级基础攻击
-    atkTotal: Math.round(atk.atk), // 含武器战力的实际攻击（展示取整，内部计算保留小数）
+    atkTotal: Math.round(atk.atk), // 含武器战力与连击加成的实际攻击（展示取整，内部计算保留小数）
+    streak: atk.streak, // 当前有效连击数（0 = 无）
+    streakBonus: atk.streakBonus, // 连击提供的攻击加成（%）
     last: ld ? { id: ld.id, name: ld.name, rarity: ld.rarity, power: ld.power, story: ld.story || '', at: (s.lastDrop && s.lastDrop.at) || 0 } : null,
   }
 }
@@ -684,6 +749,9 @@ module.exports = {
   loadSave, reloadSave, saveSave, attack, spawnEnemy, statusLine, battleLog, card, panel, miniSprite,
   reset, hpBar, xpNeed, dataDir, arsenalCard, arsenalSummary, equippedWeapon, equipWeapon,
   playerAtk, playerAtkWith,
+  // 连击：状态查询 + 档位常量（IDE 扩展比较档位跨越来触发超载演出）
+  streakState, streakTag,
+  STREAK_WINDOW, STREAK_T1, STREAK_T2, STREAK_T3, STREAK_MAX_BONUS,
   bestiaryCard, bestiarySummary, enemyInfo,
   // 供 IDE 扩展复用（把 24x24 网格交给 Webview 真彩绘制）
   decodeGrid, shiftGrid, enemyGrid, miniGrid, renderShaded, RARITY_COLOR,

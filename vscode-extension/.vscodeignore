@@ -2,5 +2,10 @@
 .vscodeignore
 config.json
 media/preview.html
+# 战斗场景样张（开发辅助，不是扩展资源）
+media/scene-lab.html
+media/scene-lab.css
+media/scene-lab.js
+media/scene-lab-data.js
 icon-src/**
 **/*.map

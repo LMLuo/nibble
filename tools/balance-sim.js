@@ -23,6 +23,9 @@ const sp = require(path.join(hookDir, 'nibble.js'))
 const enemies = require(path.join(hookDir, 'enemies.js'))
 
 const SAMPLE = Number(process.argv[2]) || 400
+// 可选：模拟"从 N 连击开始"（连击加成会乘进攻击力；默认 0 = 零连击基线）
+// 用法: NIBBLE_SIM_STREAK=30 node tools/balance-sim.js
+const STREAK = Math.max(0, Number(process.env.NIBBLE_SIM_STREAK) || 0)
 const LEVELS = [1, 5, 10, 20, 30]
 const WEAPON_CASES = [
   { label: '无武器', rarity: null },
@@ -40,6 +43,7 @@ function makeSave(lv, weaponRarity) {
   s.battles = 0
   s.defeats = 0
   s.equipped = null
+  s.streak = { count: STREAK, lastAt: STREAK ? Date.now() : 0 }
   s.arsenal = { owned: {}, pity: 0 }
   s.bestiary = { seen: {}, defeated: {} }
   if (weaponRarity) {
@@ -56,15 +60,17 @@ function entryOfTier(tier, lv) {
 }
 
 // 击杀一只怪需要几击（复用真实 attack；稀有度固定 common 以排除干扰）
-// ⚠️ 每轮样本都必须重置 level/exp 与**武器库**：
+// ⚠️ 每轮样本都必须重置 level/exp、**武器库**与**连击**：
 //   ① 击败会给经验，跑几百次会自己升级；② 击败必掉武器，几百把会累积，
-//   "未装备自动取最高战力"会把对照组一路污染成最强档（曾经因此跑出一片没差异的假数据）
+//   "未装备自动取最高战力"会把对照组一路污染成最强档（曾经因此跑出一片没差异的假数据）；
+//   ③ 连击每击 +1，不重置会一路涨到封顶，把"零连击基线"污染成高连击数据
 function turnsToKill(s, entry, lv, sample, weaponRarity) {
   let total = 0
   for (let i = 0; i < sample; i++) {
     s.level = lv
     s.exp = 0
     s.equipped = null
+    s.streak = { count: STREAK, lastAt: STREAK ? Date.now() : 0 }
     s.arsenal = { owned: {}, pity: 0 }
     if (weaponRarity) {
       const w = sp.WEAPONS.filter((x) => x.rarity === weaponRarity)[0]
@@ -88,6 +94,7 @@ const oldTurns = (lv, tier) => ((30 + (lv - 1) * 10) * (enemies.TIER_MUL[tier] |
 const f = (n) => n.toFixed(1).padStart(6)
 console.log('每格样本 ' + SAMPLE + ' ｜ 单位：击杀所需回合数（提问次数）')
 console.log('武器战力：' + Object.keys(sp.WEAPON_POWER).map((r) => sp.RARITY_LABEL[r] + ' +' + sp.WEAPON_POWER[r] + '%').join('　'))
+if (STREAK) console.log('连击：每轮从 ×' + STREAK + ' 开始（攻击 +' + sp.streakState({ streak: { count: STREAK, lastAt: Date.now() } }).bonus + '% 起，随攻击继续累积）')
 console.log('')
 
 for (const tier of TIERS) {

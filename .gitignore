@@ -13,6 +13,13 @@ vscode-extension/icon-src/
 # 本地预览产物
 vscode-extension/media/preview.html
 
+# 战斗场景样张（实验性；定稿后会被正式模块取代）
+# 数据文件由 tools/make-scene-lab.js 从真实像素素材生成，不进库
+vscode-extension/media/scene-lab.html
+vscode-extension/media/scene-lab.css
+vscode-extension/media/scene-lab.js
+vscode-extension/media/scene-lab-data.js
+
 # 官网构建产物：由 tools/build-site.js 从 site/ + plugins/nibble/hooks/ + vscode-extension/media/ 组装
 _site/
 

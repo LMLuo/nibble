@@ -61,11 +61,17 @@ if (fs.existsSync(destDir)) {
   fs.rmSync(destDir, { recursive: true, force: true })
   console.log('🧹 已清空旧的目标目录: ' + destDir)
 }
-// Node 14 兼容：fs.cpSync 要 Node 16.7+，这里手写递归拷贝（跳过不可再生的 icon-src）
+// Node 14 兼容：fs.cpSync 要 Node 16.7+，这里手写递归拷贝
+// 跳过两类不进扩展包的东西：① 不可再生的 icon-src；② 本地开发用的预览产物与场景样张
+const SKIP_COPY = new Set([
+  'icon-src',
+  'preview.html',
+  'scene-lab.html', 'scene-lab.css', 'scene-lab.js', 'scene-lab-data.js',
+])
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true })
   for (const name of fs.readdirSync(src)) {
-    if (name === 'icon-src') continue
+    if (SKIP_COPY.has(name)) continue
     const from = path.join(src, name)
     const to = path.join(dest, name)
     if (fs.statSync(from).isDirectory()) copyDir(from, to)
