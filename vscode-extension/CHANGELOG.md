@@ -3,6 +3,13 @@
 > 更早版本（`0.1.0` / `0.1.1`）的说明见 GitHub Releases：<https://github.com/LMLuo/nibble/releases>
 > 发布新版本时，把下面的「未发布」改成实际版本号即可（`vsce` 会把本文件展示在扩展详情页）。
 
+## 0.5.2
+
+### 上架微软 VS Code 官方市场
+
+- 与 `0.5.1` 功能完全相同，仅用于发布到 Visual Studio Marketplace（`marketplace.visualstudio.com`），让 VS Code 用户也能搜到并安装
+- 自此 Open VSX（CodeBuddy / VSCodium / Cursor 等）与微软市场提供同一个安装包
+
 ## 0.5.1
 
 ### 市场页展示截图更新

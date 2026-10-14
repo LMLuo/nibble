@@ -212,18 +212,38 @@ GitHub → Releases 里也会有 `v0.1.2` 和 `.vsix` 附件。
 ## 5. 手动兜底发布（CI 不可用时）
 
 ```powershell
-# 1) 打包
-npm run package:official
-
-# 2) 注入 repository（CI 会自动做，手动发就得自己来）
+# 1) 先注入 repository（CI 会自动做，手动发就得自己来）
+#    ★ 必须在打包之前：它改的是 vscode-extension/package.json，
+#      打包后再注入等于没注入，市场页会丢"源码/问题反馈"链接。
 node tools/set-repository.js LMLuo/nibble
+
+# 2) 再打包
+npm run package:official
 
 # 3) 发布（需要 Node ≥ 22 与 Open VSX access token）
 npx --yes ovsx@1 publish dist/nibble-0.1.2.vsix -p <你的token>
 ```
 
-> ⚠️ 手动发布**不会**注入 `homepage` / `bugs`，市场页会少"源码/问题反馈"链接。
-> 对比：`0.1.0` 是手动发的（这三项为空），`0.1.1` 走 CI（三项齐全）——可用这个区别判断版本来源。
+> ⚠️ 上面那条 `ovsx publish`（手动兜底发 Open VSX）**不会**注入 `homepage` / `bugs`，
+> 市场页会少"源码/问题反馈"链接；`0.1.0` 就是这种情况。
+> 对比：`0.1.1` 起走 CI，三项齐全 —— 可用这个区别判断某个版本的来源。
+
+### 只发微软市场、不配 PAT 的旁路（浏览器手动上传）
+
+没有 `VSCE_PAT` 时，微软市场可以完全绕开命令行：`vsce publish` 需要 PAT，网页上传不需要。
+
+```powershell
+node tools/set-repository.js LMLuo/nibble   # 同上，必须在打包前
+npm run package:official                    # → dist/nibble-<版本>.vsix
+```
+
+然后打开 <https://marketplace.visualstudio.com/manage> → 你的 publisher → **New extension**
+→ **Visual Studio Code** → 把 `.vsix` 拖进去 → Upload。
+
+- 不需要 PAT、不需要 Azure DevOps 组织，只要能用拥有该 publisher 的账号登录市场网页。
+- 代价：**每个版本都要手动传一次**；CI 里那步没配 `VSCE_PAT` 时会打印"跳过 VS Code Marketplace"正常结束，
+  Open VSX 的自动发布不受影响。
+- 网页上传在 2026-10 尚未实测，失败请记录现象。
 
 ---
 
@@ -335,6 +355,7 @@ npm run deploy                    # → https://nibble-stats.<子域>.workers.de
 | 已发布版本 | `0.1.0`（手动）、**`0.1.1`（CI）** |
 | 源仓库 | `https://github.com/LMLuo/nibble`（public，默认分支 `main`） |
 | 市场页 | `https://open-vsx.org/extension/nibble/nibble` |
+| 微软 VS Code Marketplace | ❌ 未上架（2026-10-14）：`vsce publish` 要 PAT，而 PAT 需要的 Azure DevOps 组织挂在发布账号的 Entra 目录下，该目录已被微软按生命周期策略冻结（`AADSTS5000225`）。绕行见第 5 节的**网页手动上传**旁路；或换一个能正常登录的账号建组织 + PAT，并在 publisher 的 Members 里把它加成 Contributor |
 | 命名空间认领 | ⏳ **进行中**（issue `EclipseFdn/open-vsx.org#13951`）—— 授予前市场页显示"未验证发布者 ⚠️"，**不影响安装使用** |
 | 匿名统计接收端 | `telemetry-worker/`（Cloudflare Workers + KV）；扩展侧地址在 `vscode-extension/telemetry.js` 的 `ENDPOINT`（**部署前为占位符 = 不上报**） |
 | 更新日志 | `vscode-extension/CHANGELOG.md`（`0.1.x` 的历史见 GitHub Releases） |
