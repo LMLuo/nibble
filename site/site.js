@@ -1020,6 +1020,86 @@
     return cache.weapon[id]
   }
 
+  /* —— 技能书（50 本）：素材解码 + 4 槽装配 + 出手抽签 ——
+     数值口径照抄 skills.js：倍率 = 按权重加权平均（空槽不参与）、4 槽同档加共鸣、
+     组合只看"已上阵的 4 本里有没有这两个标签"（与抽出哪一本无关）。 */
+  const SKILL = {}
+  ;(D.skills || []).forEach((k) => (SKILL[k.id] = k))
+  const SKILL_ORDER = ['common', 'rare', 'epic', 'legendary']
+  const RESONANCE = { common: .05, rare: .05, epic: .05, legendary: .1 }
+  const skillCache = {}
+  function skillSprite(id) {
+    if (!skillCache[id]) skillCache[id] = decodeSprite(SKILL[id] && SKILL[id].sprite)
+    return skillCache[id]
+  }
+  const skillById = (id) => (id && SKILL[id]) || null
+  function filledSkills() {
+    return (s.skills.slots || []).map(skillById).filter(Boolean)
+  }
+  function skillExpect() {
+    const list = filledSkills()
+    if (!list.length) return 1
+    let w = 0
+    let wp = 0
+    list.forEach((k) => { w += k.weight; wp += k.weight * k.power })
+    let e = wp / w
+    if (list.length === 4 && list.every((k) => k.rarity === list[0].rarity)) e += RESONANCE[list[0].rarity] || 0
+    return Math.round(e * 100) / 100
+  }
+  function skillCombos() {
+    const tags = {}
+    filledSkills().forEach((k) => (tags[k.tag] = true))
+    return (D.skillCombos || []).filter((c) => c.tags.every((t) => tags[t]))
+  }
+  // 出手抽签：从已上阵的书里按权重随机 1 本；0 本 = 普攻
+  function pickSkill() {
+    const list = filledSkills()
+    if (!list.length) return null
+    let total = 0
+    list.forEach((k) => (total += k.weight))
+    let r = rnd() * total
+    for (const k of list) {
+      r -= k.weight
+      if (r <= 0) return k
+    }
+    return list[list.length - 1]
+  }
+  // 一键推荐：候选按倍率截断到 12 本、穷举 C(12,4)，评分 = 倍率 + 组合数 × 0.03（与 skills.js 同式）
+  function autoSkills() {
+    const pool = (D.skills || []).filter((k) => s.skills.owned[k.id])
+    pool.sort((a, b) => b.power - a.power || (a.id < b.id ? -1 : 1))
+    const cand = pool.slice(0, 12)
+    const out = [null, null, null, null]
+    if (cand.length < 4) {
+      cand.forEach((k, i) => (out[i] = k.id))
+      return out
+    }
+    let bestScore = -1
+    for (let a = 0; a < cand.length; a++) {
+      for (let b = a + 1; b < cand.length; b++) {
+        for (let c = b + 1; c < cand.length; c++) {
+          for (let d = c + 1; d < cand.length; d++) {
+            const slots = [cand[a].id, cand[b].id, cand[c].id, cand[d].id]
+            const tags = {}
+            slots.forEach((id) => (tags[SKILL[id].tag] = true))
+            const combos = (D.skillCombos || []).filter((x) => x.tags.every((t) => tags[t])).length
+            let w = 0
+            let wp = 0
+            slots.forEach((id) => { w += SKILL[id].weight; wp += SKILL[id].weight * SKILL[id].power })
+            let e = wp / w
+            if (slots.every((id) => SKILL[id].rarity === SKILL[slots[0]].rarity)) e += RESONANCE[SKILL[slots[0]].rarity] || 0
+            const score = e + combos * 0.03
+            if (score > bestScore) {
+              bestScore = score
+              out.splice(0, 4, ...slots)
+            }
+          }
+        }
+      }
+    }
+    return out
+  }
+
   /* —— 数值（照抄 nibble.js / enemies.js / weapons.js）—— */
   const xpNeed = (lv) => 20 + (lv - 1) * 15
   const baseHp = (lv) => Math.round(21 + lv * 5.95)
@@ -1042,6 +1122,33 @@
     const pool = D.weapons.filter((w) => w.rarity === rarity)
     const weapon = pool[Math.min(pool.length - 1, Math.floor(rnd() * pool.length))]
     return { weapon, pity: rarity === 'epic' || rarity === 'legendary' ? 0 : pity + 1 }
+  }
+
+  // 技能书掉落（照抄 skills.js）：10% 概率；连续 30 只没出"稀有及以上"必掉一本稀有
+  function rollSkillDrop() {
+    const next = s.skills.pity + 1
+    const force = next >= M.skillPityLimit
+    let rarity = null
+    if (force) rarity = 'rare'
+    else if (rnd() < M.skillDropRate) {
+      const d = M.skillRarityDrop || {}
+      const r = rnd()
+      let acc = 0
+      rarity = 'common'
+      for (const k of SKILL_ORDER) {
+        acc += d[k] || 0
+        if (r < acc) { rarity = k; break }
+      }
+    }
+    if (!rarity) {
+      s.skills.pity = next
+      return null
+    }
+    const pool = (D.skills || []).filter((k) => k.rarity === rarity)
+    const sk = pool[Math.min(pool.length - 1, Math.floor(rnd() * pool.length))]
+    s.skills.owned[sk.id] = (s.skills.owned[sk.id] || 0) + 1
+    s.skills.pity = rarity === 'common' ? next : 0
+    return sk
   }
   function tierWeight(lv) {
     return { common: 100 - Math.min(40, lv * 2), elite: lv < 6 ? 0 : Math.min(45, (lv - 4) * 4), boss: lv < 15 ? 0 : Math.min(12, lv - 13) }
@@ -1090,8 +1197,16 @@
     // 初始给 8 连：演示自动攻击两下内就能看到「起势」光环与 ×N 徽标，访客不用干等 22 秒
     streak: { count: 8, lastAt: Date.now() },
     arsenal: { owned: Object.assign({}, D.demo.owned), pity: D.demo.pity },
+    // 技能书：收集 + 4 槽（预装槽由构建期的 autoSlots 算好，不是手写）
+    skills: {
+      owned: Object.assign({}, D.demo.skillOwned || {}),
+      pity: D.demo.skillPity || 0,
+      slots: (D.demo.skillSlots || [null, null, null, null]).slice(),
+    },
     equipped: null,
     lastDrop: null,
+    lastSkillDrop: null,
+    pendingCast: null,
     bestiary: { seen: Object.assign({}, D.demo.seen), defeated: Object.assign({}, D.demo.defeated) },
     lastLog: 'Nibble 待命中…（在 IDE 里：向 CodeBuddy 提问即可发动攻击）',
   }
@@ -1116,6 +1231,7 @@
 
   /* —— 一次攻击：nibble.js attack() 的浏览器端复刻 —— */
   let pendingDrop = null
+  let pendingSkillDrop = null
 
   // 连击档位与加成（照抄 nibble.js 的常量：<10 隐形；≥10 起势每连 +1% 封顶 +30%；≥25 燃；≥50 超载）
   const STREAK_WINDOW = 10 * 60 * 1000
@@ -1132,13 +1248,18 @@
     const info = ENEMY[e.type]
     const mech = info.mech || {}
     const w = shownWeapon()
+    // 技能书出手：按权重抽 1 本（空槽 = 普攻，倍率 1.00）
+    const book = pickSkill()
+    // 命中前的快照：施放管线在命中帧之前继续显示旧值（与扩展同口径）
+    const hpBefore = e.hp
+    const maxHpBefore = e.maxHp
     // 连击：本次攻击先计入，再按新连击结算（与扩展 attack() 同序）
     const now = Date.now()
     s.streak.count = now - s.streak.lastAt <= STREAK_WINDOW ? s.streak.count + 1 : 1
     s.streak.lastAt = now
     const sk = streakOf()
     const tag = sk.tier ? '（×' + sk.count + ' 连击' + (sk.tier >= 3 ? ' · 超载' : sk.tier >= 2 ? ' · 火力全开' : '') + '）' : ''
-    const atk = Math.max(1, playerAtk(s.level) * (1 + ((w ? w.power : 0) + sk.bonus) / 100))
+    const atk = Math.max(1, playerAtk(s.level) * (1 + ((w ? w.power : 0) + sk.bonus) / 100) * (book ? book.power : 1))
     s.battles += 1
 
     let dmg = Math.max(1, Math.round(atk * (0.9 + rnd() * 0.2)))
@@ -1161,9 +1282,36 @@
     e.hp = Math.max(0, e.hp - dmg)
     s.lastDmg = dmg // 伤害飘字用（0 = 未命中）
     const note = notes.length ? '（' + notes.join('·') + '）' : ''
+    const who = book ? 'Nibble 用「' + book.name + '」攻击！' : 'Nibble 攻击！'
+    // 施放消息：场景按 form 画招式；命中帧之前面板继续显示出手前的血量
+    const castOf = (killed, dead) => (book ? {
+      id: book.id,
+      name: book.name,
+      rarity: book.rarity,
+      color: M.rarityColor[book.rarity],
+      icon: skillSprite(book.id),
+      tier: book.tier,
+      tag: book.tag,
+      tagLabel: book.tagLabel,
+      slot: s.skills.slots.indexOf(book.id),
+      power: book.power,
+      form: book.form,
+      dmg: dmg,
+      combos: skillCombos().map((c) => c.id),
+      frames: 3,
+      impactAt: 2,
+      countered: false,
+      hpBefore: hpBefore,
+      maxHpBefore: maxHpBefore,
+      playerHpBefore: 0,
+      killed: !!killed,
+      killedEnemy: dead || null,
+      fx: {},
+    } : null)
 
     if (e.hp > 0) {
-      let log = 'Nibble 攻击！' + info.name + ' -' + dmg + ' HP' + note + tag
+      s.pendingCast = castOf(false, null)
+      let log = who + info.name + ' -' + dmg + ' HP' + note + tag
       if (mech.regen) {
         const healed = Math.min(mech.regen, e.maxHp - e.hp)
         if (healed > 0) {
@@ -1176,6 +1324,7 @@
     }
 
     if (mech.split && !e.splitDone) {
+      s.pendingCast = castOf(false, null)
       e.splitDone = true
       const childHp = Math.max(1, Math.round(e.maxHp * 0.5))
       e.maxHp = childHp
@@ -1214,6 +1363,25 @@
     s.lastDrop = { id: drop.weapon.id, at: Date.now() }
     log += '　✦ 获得 ' + drop.weapon.rarityLabel + '·' + drop.weapon.name + '！'
 
+    // 技能书：10% + 30 只保底（与扩展同口径）
+    const skillBook = rollSkillDrop()
+    if (skillBook) {
+      s.lastSkillDrop = { id: skillBook.id, at: Date.now() }
+      log += '　✦ 获得技能书 ' + M.rarityLabel[skillBook.rarity] + '·' + skillBook.name + '！'
+    }
+
+    // 击杀演出要用"被打死的那只"：场景主题与像素都得在换怪之前抓住
+    s.pendingCast = castOf(true, {
+      type: e.type,
+      tier: info.tier,
+      rarity: e.rarity,
+      rarityLabel: M.rarityLabel[e.rarity],
+      color: M.rarityColor[e.rarity],
+      name: info.name,
+      tierLabel: info.tierLabel,
+      sprite: enemySprite(e.type, e.rarity),
+    })
+
     spawnEnemy()
     const next = ENEMY[s.enemy.type]
     log += '　新的野生 ' + next.name + '（' + next.tierLabel + '·' + M.rarityLabel[s.enemy.rarity] + '）出现'
@@ -1227,11 +1395,25 @@
       story: drop.weapon.story,
       sprite: weaponSprite(drop.weapon.id),
     }
+    if (skillBook) {
+      pendingSkillDrop = {
+        type: 'drop',
+        kind: 'skill',
+        name: skillBook.name,
+        rarity: skillBook.rarity,
+        color: M.rarityColor[skillBook.rarity],
+        rarityLabel: M.rarityLabel[skillBook.rarity],
+        story: skillBook.story,
+        sprite: skillSprite(skillBook.id),
+      }
+    }
   }
 
   /* —— 组装发往 pet.js 的消息（字段与 extension.js buildState() 一一对应）—— */
   let lastBestiaryKey = ''
   let lastOwnedCount = -1
+  let lastSkillKey = ''
+  let castPipe = null
 
   function buildState() {
     const e = s.enemy
@@ -1311,6 +1493,28 @@
     }
   }
 
+  // 技能书全量数据（50 本 + 4 槽）：收集数 / 装配变化时推全量（与 extension.js buildSkillData 同构）
+  function skillData() {
+    const sprites = {}
+    ;(D.skills || []).forEach((k) => (sprites[k.id] = skillSprite(k.id)))
+    return {
+      type: 'skillData',
+      owned: s.skills.owned,
+      pity: s.skills.pity,
+      pityLimit: M.skillPityLimit,
+      slots: s.skills.slots,
+      expect: skillExpect(),
+      combos: skillCombos(),
+      // 有书但一本都没上阵 → 页签高亮（首次引导，与扩展一致）
+      guide: Object.keys(s.skills.owned).length > 0 && !filledSkills().length,
+      list: D.skills || [],
+      sprites: sprites,
+      tags: D.skillTags || {},
+      tagDesc: D.skillTagDesc || {},
+      combosAll: D.skillCombos || [],
+    }
+  }
+
   function bestiaryData() {
     const sprites = {}
     D.enemies.forEach((e) => (sprites[e.id] = enemySprite(e.id, 'common')))
@@ -1347,6 +1551,13 @@
     const burst = lastStreakTier >= 0 && lastStreakTier < 3 && st.streakTier >= 3
     lastStreakTier = st.streakTier
 
+    // 施放管线（第五刀）：cast 必须先于 state 推——面板读到"出手前快照"才冻结得住
+    if (s.pendingCast) {
+      const cast = s.pendingCast
+      s.pendingCast = null
+      post(Object.assign({ type: 'cast' }, cast))
+      castPipe = { frames: cast.frames, phase: 0 }
+    }
     if (st.key !== lastKey) {
       lastKey = st.key
       post(Object.assign({ type: 'state' }, st))
@@ -1359,6 +1570,17 @@
     if (st.defeats !== lastOwnedCount) {
       lastOwnedCount = st.defeats
       post(arsenalData())
+    }
+    // 技能书掉落：与武器 toast 共用通道（用 kind 区分文案），排在武器之后（后到的先显示）
+    if (pendingSkillDrop) {
+      post(pendingSkillDrop)
+      pendingSkillDrop = null
+    }
+    // 技能书数据：收集数 / 4 槽装配变化时推全量
+    const kkey = Object.keys(s.skills.owned).length + '|' + s.skills.slots.join(',')
+    if (kkey !== lastSkillKey) {
+      lastSkillKey = kkey
+      post(skillData())
     }
     const bkey = Object.keys(s.bestiary.seen).length + '|' + Object.keys(s.bestiary.defeated).length
     if (bkey !== lastBestiaryKey) {
@@ -1375,7 +1597,13 @@
       maxHp: st.maxHp,
       level: st.level,
       log: st.log,
+      // 施放相位（0 起手 → 2 命中 → 末帧反击；-1 = 没在播）；必须由宿主走，面板不自己数帧
+      castPhase: castPipe ? castPipe.phase : -1,
     })
+    if (castPipe && ++castPipe.phase >= castPipe.frames) {
+      castPipe = null
+      post({ type: 'bookLanded' }) // 飞书落地：把挂起的技能书提示放出来
+    }
   }
 
   window.acquireVsCodeApi = function () {
@@ -1386,6 +1614,7 @@
           post(Object.assign({ type: 'state' }, buildState()))
           post(arsenalData())
           post(bestiaryData())
+          post(skillData())
           beat()
           return
         }
@@ -1399,6 +1628,26 @@
           lastKey = '' // 强制重推 state
           post(Object.assign({ type: 'state' }, buildState()))
           post(arsenalData())
+          beat()
+        }
+        if (msg.type === 'skillEquip') {
+          // 4 槽手动装配：id=null 卸下；必须 4 本不同（先把它从别的槽里摘掉）
+          const id = msg.id && s.skills.owned[msg.id] ? msg.id : null
+          const slot = Math.max(0, Math.min(3, Number(msg.slot) || 0))
+          if (id) s.skills.slots = s.skills.slots.map((x) => (x === id ? null : x))
+          s.skills.slots[slot] = id
+          lastKey = ''
+          lastSkillKey = ''
+          post(Object.assign({ type: 'state' }, buildState()))
+          post(skillData())
+          beat()
+        }
+        if (msg.type === 'skillAuto') {
+          s.skills.slots = autoSkills()
+          lastKey = ''
+          lastSkillKey = ''
+          post(Object.assign({ type: 'state' }, buildState()))
+          post(skillData())
           beat()
         }
       },
@@ -1433,7 +1682,8 @@
   if (note) {
     note.textContent =
       '假存档 · Lv ' + s.level + ' · 图鉴 ' + Object.keys(s.bestiary.seen).length + '/' + M.enemyTotal +
-      ' · 武器 ' + Object.keys(s.arsenal.owned).length + '/' + M.weaponTotal
+      ' · 武器 ' + Object.keys(s.arsenal.owned).length + '/' + M.weaponTotal +
+      ' · 技能书 ' + Object.keys(s.skills.owned).length + '/' + M.skillTotal
   }
 
   /* ------------------------------------------------------------ 2.5) 把你今天遇到的 Bug 丢给它

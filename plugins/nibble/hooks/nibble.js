@@ -12,9 +12,17 @@ const path = require('path')
 const { PIXEL_DATA } = require('./pixels')
 const { WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid, WEAPON_POWER, bestOwnedWeapon } = require('./weapons')
 const {
-  ENEMIES, ENEMY_INDEX, ENEMY_TOTAL, TIER_COUNTS, TIER_LABEL, TIER_ORDER,
+  ENEMIES, ENEMY_INDEX, ENEMY_TOTAL, TIER_COUNTS, TIER_LABEL, TIER_ORDER, RARITY_MUL,
   enemyMaxHp, pickEnemy, mechSummary,
 } = require('./enemies')
+// 技能书（50 本）：收集层（掉落 + 技能库 + 4 槽装配）+ 出手层（随机施放与标签结算，见 attack）
+const {
+  SKILLS, SKILL_INDEX, SKILL_TOTAL, SKILL_RARITY_COUNTS, SKILL_POWER, SKILL_WEIGHT, SKILL_TIER,
+  SKILL_DROP_RATE, SKILL_PITY_LIMIT, SKILL_RARITY_DROP, rollSkill,
+  TAG_KEYS, TAG_LABEL, TAG_POWER, TAG_DESC, COMBOS,
+  emptySlots, normalizeSlots, slotExpect, combosOf, autoSlots, skillSpriteGrid,
+  castContext, tagValue, hasCombo,
+} = require('./skills')
 
 // 怪物素材（构建期由 tools/monsters-sprites.mjs 生成）；未构建时回落到内置素材，保证不崩
 let ENEMY_PIXEL_DATA = {}
@@ -231,7 +239,10 @@ function freshSave() {
     v: 1, level: 1, exp: 0, battles: 0, defeats: 0, lastLog: null, logKind: 'idle', enemy: null,
     arsenal: { owned: {}, pity: 0 }, lastDrop: null, equipped: null,
     bestiary: { seen: {}, defeated: {} },
+    skills: { owned: {}, pity: 0 }, skillSlots: [null, null, null, null], lastSkillDrop: null,
     streak: { count: 0, lastAt: 0 }, lastDmg: 0,
+    // 风险层（第三刀）：玩家血量只在攻击/反击时变化；playerHp 缺省 = 满血
+    playerHp: null, playerGuard: null, knockbackAt: 0,
   }
 }
 
@@ -247,6 +258,25 @@ function parseArsenal(a) {
     out.pity = Math.max(0, Number(a.pity) || 0)
   }
   return out
+}
+
+// 解析技能书存档：与 parseArsenal 同策略（未知 id 静默丢弃，旧档缺省 = 0 本）
+function parseSkills(a) {
+  const out = { owned: {}, pity: 0 }
+  if (a && typeof a === 'object') {
+    if (a.owned && typeof a.owned === 'object') {
+      for (const k of Object.keys(a.owned)) {
+        if (SKILL_INDEX[k]) out.owned[k] = Math.max(1, Number(a.owned[k]) || 1)
+      }
+    }
+    out.pity = Math.max(0, Number(a.pity) || 0)
+  }
+  return out
+}
+
+function ensureSkills(s) {
+  if (!s.skills) s.skills = parseSkills(null)
+  return s.skills
 }
 
 // 解析怪物库存档：只接受已知怪物 id（未知 id 静默丢弃，向前兼容加/删怪物）
@@ -320,9 +350,16 @@ function streakState(s, now) {
   const t = now || Date.now()
   if (!st || !st.count || !st.lastAt || t - st.lastAt > STREAK_WINDOW) return { count: 0, bonus: 0, tier: 0 }
   const count = Math.max(0, Number(st.count) || 0)
-  const bonus = count >= STREAK_T1 ? Math.min(STREAK_T1 + (count - STREAK_T1), STREAK_MAX_BONUS) : 0
+  const bonus = streakBonusOf(count)
   const tier = count >= STREAK_T3 ? 3 : count >= STREAK_T2 ? 2 : count >= STREAK_T1 ? 1 : 0
   return { count, bonus, tier }
+}
+
+// 连击加成（只看连击数）：≥10 起 +10%、每连 +1%、封顶 +30%
+// 抽成独立函数是因为「连击增幅」标签要按"连击 +N"计算加成（只影响本次，不改计数）
+function streakBonusOf(count) {
+  const c = Math.max(0, Number(count) || 0)
+  return c >= STREAK_T1 ? Math.min(STREAK_T1 + (c - STREAK_T1), STREAK_MAX_BONUS) : 0
 }
 
 // 本次攻击计入连击：窗口内 +1，超窗从 1 重新开始（不提示、不惩罚）
@@ -344,15 +381,17 @@ function streakTag(sk) {
 
 // 玩家实际攻击力 = 等级基础 ×（1 + 武器战力% + 连击加成%）
 // ⚠️ atk 刻意保留小数：先取整会在低等级直接把 +8%/+15% 抹平（见 tools/balance-sim.js）
-function playerAtkWith(s) {
+// streakBonus 可覆盖（「连击增幅」标签按"连击 +N"算加成，见 attack）
+function playerAtkWith(s, streakBonus) {
   const base = playerAtk(s.level)
   const w = equippedWeapon(s)
   const power = w ? w.power : 0
   const sk = streakState(s)
+  const bonus = typeof streakBonus === 'number' ? streakBonus : sk.bonus
   return {
     base, weapon: w, power,
-    streak: sk.count, streakBonus: sk.bonus, streakTier: sk.tier,
-    atk: Math.max(1, base * (1 + (power + sk.bonus) / 100)),
+    streak: sk.count, streakBonus: bonus, streakTier: sk.tier,
+    atk: Math.max(1, base * (1 + (power + bonus) / 100)),
   }
 }
 
@@ -378,6 +417,8 @@ function spawnEnemy(s, opts) {
     maxHp,
     shieldLeft: mech.shield || 0,
     splitDone: false,
+    enraged: false, // 狂暴（A+ 档）：HP 首次跌破 30% 后持久
+    reShieldIn: 0, // 护盾再生的回合计数（护盾被击穿后开始累计）
   }
   markSeen(s, entry.id)
   return s.enemy
@@ -403,12 +444,25 @@ function loadSave() {
           maxHp: e.maxHp,
           shieldLeft: Math.max(0, Number(e.shieldLeft) || 0),
           splitDone: !!e.splitDone,
+          enraged: !!e.enraged,
+          reShieldIn: Math.max(0, Number(e.reShieldIn) || 0),
         }
       }
+      // 风险层：玩家血量 / 护盾 / 被击退时间戳（缺省 = 满血、无护盾）
+      const php = Number(parsed.playerHp)
+      if (isFinite(php) && php > 0) s.playerHp = Math.round(php)
+      s.playerGuard = parsed.playerGuard === 'immune' || parsed.playerGuard === 'half' ? parsed.playerGuard : null
+      s.knockbackAt = Math.max(0, Number(parsed.knockbackAt) || 0)
       if (typeof parsed.lastLog === 'string') s.lastLog = parsed.lastLog
       if (typeof parsed.logKind === 'string') s.logKind = parsed.logKind
       s.arsenal = parseArsenal(parsed.arsenal)
       s.bestiary = parseBestiary(parsed.bestiary)
+      // 技能书：旧档没有 → 0 本、4 空槽（不影响任何既有进度）
+      s.skills = parseSkills(parsed.skills)
+      s.skillSlots = normalizeSlots(parsed.skillSlots, s.skills.owned)
+      if (parsed.lastSkillDrop && typeof parsed.lastSkillDrop === 'object' && SKILL_INDEX[parsed.lastSkillDrop.id]) {
+        s.lastSkillDrop = { id: parsed.lastSkillDrop.id, at: Number(parsed.lastSkillDrop.at) || 0 }
+      }
       // 连击（旧档没有 → 默认 0 连）；lastDmg 只用于面板飘字
       const st = parsed.streak
       if (st && typeof st === 'object') {
@@ -445,43 +499,262 @@ function gainExp(s, amount) {
   return ups
 }
 
-// 一次攻击：应用怪物机制（闪避/护盾/护甲/自愈/分裂）→ 返回一行战斗日志
+// ============================ 玩家血量与怪物反击（第三刀）============================
+// 设计文档：docs/游戏升级规划/11-玩家血量与怪物反击设计.md
+// 玩家 HP 是"单场资源"：唯一回复来源是**击杀回满**；归零 = 被击退（换新怪 + 断连击，零实质惩罚）
+const playerMaxHp = (lv) => Math.round(30 + Math.max(1, Number(lv) || 1) * 6)
+
+// 反击伤害 = 玩家 maxHp 的百分比 × tier 系数 × 稀有度（等级无关、量级稳定）
+// 致死下数 ≈ 20（小怪）/ 28（精英）/ 33（头目），安全边际 ≥1.8×（见 11 文档 4.2）
+const COUNTER_R = { common: 0.05, elite: 0.035, boss: 0.03 }
+function playerCounter(lv, rarity, tier) {
+  const r = COUNTER_R[tier] || COUNTER_R.common
+  return Math.max(1, Math.round(playerMaxHp(lv) * r * (RARITY_MUL[rarity] || 1)))
+}
+
+// 当前玩家 HP（缺省 / 旧档 / 异常 → 满血；被击退后立即回满，所以 0 不会持久）
+function playerHpOf(s) {
+  const max = playerMaxHp(s.level)
+  const hp = Number(s.playerHp)
+  if (!isFinite(hp) || hp <= 0) return max
+  return Math.min(max, Math.round(hp))
+}
+
+// 玩家受伤：扣血 → 归零则被击退（满血 + 换新怪 + 断连击 + 零惩罚）
+// 返回 true 表示被击退（调用方应立即收尾，本场不再给经验/掉落）
+function hurtPlayer(s, dmg, info) {
+  if (!(dmg > 0)) return false
+  s.playerHp = Math.max(0, playerHpOf(s) - dmg)
+  if (s.playerHp > 0) return false
+  s.streak = { count: 0, lastAt: Date.now() } // 断连击（与超窗断连同口径：静默、无惩罚）
+  s.playerHp = playerMaxHp(s.level) // 满血
+  s.playerGuard = null
+  spawnEnemy(s) // 换一只新怪（旧怪剩余 HP 不保留，避免卡关）
+  s.knockbackAt = Date.now()
+  s.logKind = 'knockback'
+  return true
+}
+
+// 敌方反应（玩家攻击结算后，敌人仍在场时）：尖刺 → 反击 → 反震/血偿
+// 顺序写死在 11 文档 4.3：**击杀成功不反击**；追击的追加一击不额外触发
+function enemyReaction(s, enemy, info, mech, cast, strong) {
+  let out = ''
+  const maxHp = playerMaxHp(s.level)
+  // ① 尖刺：每次受击反弹固定伤害（不吃护盾类减免）
+  if (mech.thorns) {
+    const before = playerHpOf(s)
+    const knocked = hurtPlayer(s, mech.thorns, info)
+    out += `　🩸 尖刺反弹 ${Math.min(mech.thorns, before)} HP（HP ${playerHpOf(s)}/${maxHp}）`
+    if (knocked) {
+      out += `　🛡 Nibble 被${info.name}击退！血量见底，换一只新怪继续`
+      return { log: out, knocked: true }
+    }
+  }
+  // ② 反击：按 maxHp 百分比；狂暴 ×1.5；玩家侧护盾在这里消费（护盾标签 / 续航组合留下的）
+  let dmg = playerCounter(s.level, enemy.rarity, info.tier)
+  if (mech.enrage && enemy.enraged) dmg = Math.round(dmg * 1.5)
+  const guard = s.playerGuard || null
+  s.playerGuard = null
+  if (guard === 'immune') dmg = 0
+  else if (guard === 'half') dmg = Math.round(dmg * 0.5)
+  if (hasCombo(cast.combos, 'iron_wall')) dmg = Math.round(dmg * 0.75) // 铁壁：反击再 -25%
+  if (dmg <= 0) {
+    out += `　🛡 护盾挡下反击（HP ${playerHpOf(s)}/${maxHp}）`
+    return { log: out, knocked: false }
+  }
+  const before = playerHpOf(s)
+  const knocked = hurtPlayer(s, dmg, info)
+  out += `　⚔ ${info.name} 反击！Nibble -${Math.min(dmg, before)} HP（HP ${playerHpOf(s)}/${maxHp}）`
+  if (knocked) {
+    out += `　🛡 Nibble 被${info.name}击退！血量见底，换一只新怪继续`
+    return { log: out, knocked: true }
+  }
+  // ③ 反震：把吃到的伤害按比例反弹（以牙还牙 +25%；血偿把反弹的一半回血）
+  let reflectBack = 0
+  if (cast.tags.reflect) {
+    // 一次算完再取整：分两步 round 会把 1.5→2 再 ×1.25→3，凭空多出 1 点
+    let back = Math.round(dmg * (tagValue('reflect', strong) / 100) * (hasCombo(cast.combos, 'eye_for_eye') ? 1.25 : 1))
+    if (back > 0) {
+      enemy.hp = Math.max(0, enemy.hp - back)
+      reflectBack = back // 表现层用（技能特效的"反震"回弹）
+      out += `　↩ 反震 ${back}`
+      if (hasCombo(cast.combos, 'blood_debt')) {
+        const heal = Math.min(Math.round(back * 0.5), maxHp - playerHpOf(s))
+        if (heal > 0) {
+          s.playerHp = playerHpOf(s) + heal
+          out += `（血偿 +${heal}）`
+        }
+      }
+    }
+  }
+  return { log: out, knocked: false, reflect: reflectBack }
+}
+
+// 一次攻击：应用怪物机制（闪避/护盾/护甲/自愈/分裂）+ 技能出手 + 怪物反击 → 返回一行战斗日志
 function attack(s) {
   const enemy = s.enemy
   const info = enemyInfo(enemy.type)
   const mech = info.mech
+  // 表现层（第五刀·施放管线）要的"出手前快照"：命中前的两帧里，面板冻结显示这些旧值
+  const hpBefore = enemy.hp
+  const maxHpBefore = enemy.maxHp
+  const playerHpBefore = playerHpOf(s)
   // 连击：本次攻击先计入，再按新连击结算（≥10 起才有加成与文案）
   bumpStreak(s)
   const sk = streakState(s)
   const tag = streakTag(sk)
-  const atk = playerAtkWith(s).atk // 等级基础 ×（1 + 武器战力% + 连击加成%）
+  // 出手（第二刀）：4 槽按权重随机抽 1 本；空槽 = 普攻（倍率 1.00）
+  // 设计文档：docs/游戏升级规划/10-技能书与技能库设计.md（第三、四节）
+  const cast = castContext(s.skillSlots)
+  const strong = cast.strong
+  const has = (id) => hasCombo(cast.combos, id)
+  // 连击加成：连击增幅标签按"连击 +N"计算（只影响本次加成，不改计数）；气势组合再 +3%
+  let streakBonus = sk.bonus
+  if (cast.tags.surge) streakBonus = streakBonusOf(sk.count + tagValue('surge', strong))
+  if (has('momentum')) streakBonus += 3
+  const atk = playerAtkWith(s, streakBonus).atk // 等级基础 ×（1 + 武器战力% + 连击加成%）
   s.battles += 1
 
-  // 伤害波动改为按比例（±10%）而非固定 ±2：低等级下固定抖动会淹没武器战力的差距
-  let dmg = Math.max(1, Math.round(atk * (0.9 + Math.random() * 0.2)))
+  // 伤害 = atk × 技能倍率 × 稀有度共鸣 × 必暴 × 致命组合；波动仍按比例（±10%）
+  const crit = !!cast.tags.crit
+  const critMul = crit ? tagValue('crit', strong) : 1
+  let mul = cast.power * cast.resonance * critMul
+  if (crit && has('lethal')) mul *= 1.1
+  let dmg = Math.max(1, Math.round(atk * mul * (0.9 + Math.random() * 0.2)))
   const notes = []
-  if (mech.dodge && Math.random() < mech.dodge) {
+  const pierce = !!cast.tags.pierce
+  const rend = !!cast.tags.rend
+  const aimStrong = !!cast.tags.aim && strong
+  // 表现层（第四刀·特效）要的"实际生效结果"：破甲削了几层、吸血回了多少
+  let rendCut = 0
+  let castHeal = 0
+  if (!cast.tags.aim && mech.dodge && Math.random() < mech.dodge) {
     dmg = 0
     notes.push('闪避')
   } else {
+    // 护盾格挡：贯穿 / 精准（强档）无视减半并消耗 1 层；粉碎组合把护盾直接清零
     if (enemy.shieldLeft > 0) {
-      dmg = Math.max(1, Math.round(dmg / 2))
-      enemy.shieldLeft -= 1
-      notes.push('护盾格挡')
+      if (pierce || aimStrong) {
+        if (pierce && has('shatter')) {
+          enemy.shieldLeft = 0
+          notes.push('粉碎')
+        } else {
+          enemy.shieldLeft -= 1
+          notes.push(pierce ? '贯穿' : '无视格挡')
+        }
+      } else {
+        dmg = Math.max(1, Math.round(dmg / 2))
+        enemy.shieldLeft -= 1
+        notes.push('护盾格挡')
+      }
     }
+    // 破甲：永久削护盾层
+    if (rend && enemy.shieldLeft > 0) {
+      const cut = Math.min(enemy.shieldLeft, tagValue('rend', strong))
+      enemy.shieldLeft -= cut
+      rendCut = cut
+      notes.push('破甲 -' + cut + ' 盾')
+    }
+    // 护甲：贯穿 / 破甲 / 破防重击（暴击时）无视
+    const ignoreArmor = pierce || rend || (crit && has('armor_break'))
     if (mech.armor) {
-      const before = dmg
-      dmg = Math.max(1, dmg - mech.armor)
-      if (dmg < before) notes.push(`护甲 ${mech.armor}`)
+      if (ignoreArmor) {
+        notes.push('无视护甲')
+      } else {
+        const before = dmg
+        dmg = Math.max(1, dmg - mech.armor)
+        if (dmg < before) notes.push(`护甲 ${mech.armor}`)
+      }
     }
+    if (crit) notes.push('暴击 ×' + critMul)
   }
   enemy.hp = Math.max(0, enemy.hp - dmg)
-  const note = notes.length ? `（${notes.join('·')}）` : ''
-  s.lastDmg = dmg // 面板伤害飘字用（0 = 未命中，飘字跳过）
+  let total = dmg
 
-  // 未死：结算自愈
+  // 追击：追加一击（不吃减伤、不再抽签、不触发反击）；重影吃暴击倍率、锁影再 +25%
+  if (cast.tags.chase && dmg > 0 && enemy.hp > 0) {
+    let ratio = tagValue('chase', strong)
+    if (crit && has('afterimage')) ratio *= critMul
+    let extra = Math.max(1, Math.round(dmg * ratio))
+    if (has('lock_on')) extra = Math.max(1, Math.round(extra * 1.25))
+    enemy.hp = Math.max(0, enemy.hp - extra)
+    total += extra
+    notes.push('追击 +' + extra)
+  }
+  // 组合：暴走（暴击）/ 连环（追击）额外 +1 连击计数 —— 只奖励连续，不惩罚
+  let comboStreak = 0
+  if (crit && has('rampage')) comboStreak += 1
+  if (cast.tags.chase && has('chain')) comboStreak += 1
+  if (comboStreak) s.streak.count = (Number(s.streak.count) || 0) + comboStreak
+
+  // —— 玩家侧结算（第三刀）——
+  // 护盾标签：为"下一次反击"挂上减伤（本回合被反击则当回合消费；没被反击就留到下次）
+  if (cast.tags.guard) s.playerGuard = strong ? 'immune' : 'half'
+  // 回复标签：本次伤害的一部分转回自身 HP；（续航组合）满血时转成一格护盾
+  if (cast.tags.leech && total > 0) {
+    const maxHp = playerMaxHp(s.level)
+    const cur = playerHpOf(s)
+    if (cur >= maxHp && hasCombo(cast.combos, 'sustain')) {
+      if (!s.playerGuard) s.playerGuard = 'half'
+      notes.push('回复→护盾')
+    } else {
+      const heal = Math.min(Math.round((total * tagValue('leech', strong)) / 100), maxHp - cur)
+      if (heal > 0) {
+        s.playerHp = cur + heal
+        castHeal = heal
+        notes.push('回复 +' + heal)
+      }
+    }
+  }
+  // 狂暴：HP 首次跌破 30% → 进入狂暴（持久），反击 ×1.5
+  if (mech.enrage && !enemy.enraged && enemy.hp > 0 && enemy.hp <= Math.round(enemy.maxHp * 0.3)) {
+    enemy.enraged = true
+    notes.push('狂暴')
+  }
+
+  // 表现层（第四刀·技能特效）：把"这一击抽到哪本、标签实际生效了什么"记进存档，
+  // 由扩展 tick 边缘检测推 type:'cast'（at 去重，与 lastDrop 同范式）。普攻写 null → 不推特效。
+  // ⚠️ 只记录既有结算结果，不新增任何战斗状态、不改数值。
+  s.lastCast = cast.book ? {
+    id: cast.book.id,
+    name: cast.book.name,
+    rarity: cast.book.rarity,
+    tag: cast.book.tag,
+    tier: cast.tier, // 演出档：1 轻（普通）/ 2 中（稀有）/ 3 重（史诗·传说）
+    slot: cast.slot, // 抽中的槽位（0~3），面板据此高亮那一格
+    form: cast.book.form || '', // 招式原语（第五刀·表现）：12 选 1，逐本指派
+    enemyType: enemy.type, // 被攻击的那只（击杀后存档里已换成新怪，表现层要用旧的那只）
+    enemyRarity: enemy.rarity,
+    power: cast.power,
+    combos: cast.combos.map((c) => c.id),
+    // 出手前快照：命中帧之前，面板冻结显示这些旧值（"先出特效、再打击"）
+    hpBefore,
+    maxHpBefore,
+    playerHpBefore,
+    killed: false, // 由击败分支回填
+    countered: enemy.hp > 0, // 未死 → 本次会走怪物反应（反击/尖刺/反震）
+    dmg: total,
+    hit: dmg > 0,
+    crit: crit && dmg > 0,
+    pierce,
+    aim: aimStrong,
+    rend: rendCut,
+    chase: !!cast.tags.chase && total > dmg,
+    guard: cast.tags.guard ? s.playerGuard : null,
+    leech: !!cast.tags.leech,
+    surge: !!cast.tags.surge,
+    heal: castHeal,
+    reflect: 0, // 反震发生在反击之后，由敌方反应的返回值补
+    at: Date.now(),
+  } : null
+
+  const note = notes.length ? `（${notes.join('·')}）` : ''
+  s.lastDmg = total // 面板伤害飘字用（0 = 未命中，飘字跳过）
+  const castName = cast.book ? `用「${cast.book.name}」` : ''
+  let log = `Nibble ${castName}攻击！${info.name} -${total} HP${note}${tag}`
+
+  // 未死：结算自愈 → 敌方反应（尖刺/反击/反震）
   if (enemy.hp > 0) {
-    let log = `Nibble 攻击！${info.name} -${dmg} HP${note}${tag}`
     if (mech.regen) {
       const healed = Math.min(mech.regen, enemy.maxHp - enemy.hp)
       if (healed > 0) {
@@ -489,33 +762,62 @@ function attack(s) {
         log += `　💚 ${info.name} 自愈 +${healed} HP`
       }
     }
+    const r = enemyReaction(s, enemy, info, mech, cast, strong)
+    log += r.log
+    if (s.lastCast && r.reflect) s.lastCast.reflect = r.reflect // 特效层：反震回弹
+    if (r.knocked) {
+      s.lastLog = log // logKind 由 hurtPlayer 置为 knockback
+      return log
+    }
+    // 护盾再生：**只有本来就有护盾的怪**才谈得上"再生"（否则等于凭空造盾，头目会被拖成两倍时长）；
+    // 恢复上限 = 开场层数（mech.shield），不能越攒越多
+    if (mech.reShield && mech.shield && enemy.shieldLeft === 0 && enemy.hp > 0) {
+      enemy.reShieldIn = (Number(enemy.reShieldIn) || 0) + 1
+      if (enemy.reShieldIn >= mech.reShield) {
+        enemy.shieldLeft = Math.min(mech.shield, enemy.shieldLeft + 1)
+        enemy.reShieldIn = 0
+        log += '　🔁 护盾再生 +1'
+      }
+    }
+    // ⚠️ 必须在此收尾：漏下去就会走到击败分支（曾因此把每次攻击都判成击杀）
     s.logKind = 'attack'
     s.lastLog = log
     return log
   }
 
-  // 首次归零且带分裂：原地分裂成两只 50% HP 个体（整场只触发一次）
-  if (mech.split && !enemy.splitDone) {
+  // 首次归零且带分裂：原地分裂成两只 50% HP 个体（整场只触发一次）；分裂不算击败 → 仍会反击
+  if (enemy.hp <= 0 && mech.split && !enemy.splitDone) {
     enemy.splitDone = true
     const childHp = Math.max(1, Math.round(enemy.maxHp * 0.5))
     enemy.maxHp = childHp
     enemy.hp = childHp
     enemy.shieldLeft = 0
-    const log = `🧬 ${info.name} 受创分裂！重置为 ${childHp} HP（分裂体 ×2）`
+    log += `　🧬 ${info.name} 受创分裂！重置为 ${childHp} HP（分裂体 ×2）`
+    if (s.lastCast) s.lastCast.countered = true // 分裂体同样会反击 → 演出管线要留"反击帧"
+    const r2 = enemyReaction(s, enemy, info, mech, cast, strong)
+    log += r2.log
+    if (s.lastCast && r2.reflect) s.lastCast.reflect = r2.reflect
+    if (r2.knocked) {
+      s.lastLog = log
+      return log
+    }
     s.logKind = 'attack'
     s.lastLog = log
     return log
   }
 
-  // 击败：记怪物库 + 掉武器 + 刷新新怪
+  // 击败：记怪物库 + 掉武器 + 刷新新怪（**击杀成功不反击**，玩家血量回满）
   enemy.hp = 0
   s.defeats += 1
+  if (s.lastCast) s.lastCast.killed = true // 表现层：命中帧之后才允许播"消散 + 掉落"
+  s.playerHp = playerMaxHp(s.level) // 击杀回满：玩家 HP 的唯一回复来源
+  s.playerGuard = null
   const b = ensureBestiary(s)
   const firstTime = !b.defeated[enemy.type]
   markDefeated(s, enemy.type)
   const gain = 6 + Math.round(enemy.maxHp * 0.6)
   const ups = gainExp(s, gain)
-  let log = `击败 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[enemy.rarity]}）！${tag}`
+  log = `击败 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[enemy.rarity]}）！${tag}`
   log += firstTime ? '🆕 收录进怪物库' : `怪物库 ×${b.defeated[enemy.type]}`
   log += ` +${gain}XP`
   if (ups > 0) log += `　⬆ 升级 Lv ${s.level}！`
@@ -527,6 +829,17 @@ function attack(s) {
   s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
   s.lastDrop = { id: drop.weapon.id, at: Date.now() }
   log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
+  // 技能书：独立池（10% 掷 / 保底 20 只怪），不影响武器掉落、经验与连击
+  const books = ensureSkills(s)
+  const firstBook = Object.keys(books.owned).length === 0
+  const sdrop = rollSkill(books.pity)
+  books.pity = sdrop.pity
+  if (sdrop.skill) {
+    books.owned[sdrop.skill.id] = (books.owned[sdrop.skill.id] || 0) + 1
+    s.lastSkillDrop = { id: sdrop.skill.id, at: Date.now() }
+    log += `　📖 获得 ${RARITY_LABEL[sdrop.skill.rarity]}·${sdrop.skill.name}！`
+    if (firstBook) log += '　（首次获得技能书：去「技能书」页装配最多 4 本，出手时随机施放）'
+  }
   spawnEnemy(s)
   const next = enemyInfo(s.enemy.type)
   log += `　新的野生 ${next.name}（${next.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）出现`
@@ -535,11 +848,15 @@ function attack(s) {
   return log
 }
 
-function hpBar(s, total) {
+// HP 条：默认画敌人（向后兼容）；who = 'player' 时画玩家（第三刀）
+function hpBar(s, total, who) {
   const n = total || 10
-  const ratio = Math.max(0, s.enemy.hp) / s.enemy.maxHp
+  const isPlayer = who === 'player'
+  const cur = isPlayer ? playerHpOf(s) : s.enemy.hp
+  const max = isPlayer ? playerMaxHp(s.level) : s.enemy.maxHp
+  const ratio = Math.max(0, cur) / Math.max(1, max)
   const filled = Math.round(ratio * n)
-  return { bar: '█'.repeat(filled) + '░'.repeat(n - filled), num: `${s.enemy.hp}/${s.enemy.maxHp}`, ratio }
+  return { bar: '█'.repeat(filled) + '░'.repeat(n - filled), num: `${cur}/${max}`, ratio }
 }
 
 // ============================ 输出文本 ============================
@@ -554,7 +871,7 @@ function statusLine() {
   const eMini = miniGrid(enemyGrid(s.enemy.type, s.enemy.rarity, frame === 0), 12, 2)
   const pStr = renderHalfBlock(bob, 12, 2, true)[0]
   const eStr = renderHalfBlock(eMini, 12, 2, true)[0]
-  const hp = hpBar(s)
+  const hp = hpBar(s, 10, 'player') // 第三刀：这条 HP 归玩家（敌人血量在卡片/面板里看）
   const hpColor = hp.ratio > 0.5 ? '#4ECDC4' : hp.ratio > 0.25 ? '#FFE066' : '#FF6B6B'
   const sword = '\x1b[1;31m⚔\x1b[0m'
   const lv = `\x1b[1;36mLv${s.level}\x1b[0m`
@@ -572,7 +889,7 @@ function statusLine() {
 // 战斗日志（供 hook systemMessage 使用，纯文本一行）
 function battleLog() {
   const s = loadSave()
-  const color = { attack: '#FF6B6B', victory: '#4ECDC4', levelup: '#FFD700' }[s.logKind] || '#4ECDC4'
+  const color = { attack: '#FF6B6B', victory: '#4ECDC4', levelup: '#FFD700', knockback: '#FF9F45' }[s.logKind] || '#4ECDC4'
   return { text: `⚔ ${s.lastLog || 'Nibble 待命'}`, color }
 }
 
@@ -584,6 +901,7 @@ function card() {
   const rows = []
   for (let i = 0; i < 12; i++) rows.push(p[i] + '   ⚔   ' + e[i])
   const hp = hpBar(s)
+  const php = hpBar(s, 10, 'player')
   const sum = arsenalSummary(s)
   const best = bestiarySummary(s)
   const info = enemyInfo(s.enemy.type)
@@ -592,6 +910,7 @@ function card() {
     '```',
     ...rows,
     '```',
+    `🛡 Nibble HP [${php.bar}] ${php.num}${s.playerGuard ? '　（护盾已就绪）' : ''}`,
     `**Lv ${s.level}** · XP ${s.exp}/${xpNeed(s.level)} · 出击 ${s.battles} 次 · 击败 ${s.defeats} 次` +
       (sum.streak >= STREAK_T1 ? ` · 连击 ×${sum.streak}` : ''),
     `HP [${hp.bar}] ${hp.num}　野生 **${info.name}**（${info.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）${mech}`,
@@ -612,9 +931,10 @@ function miniSprite(name, rarity) {
 function panel() {
   const s = loadSave()
   const hp = hpBar(s)
+  const php = hpBar(s, 10, 'player')
   const info = enemyInfo(s.enemy.type)
   return [
-    `${miniSprite('player')}  ⚔  ${miniSprite(s.enemy.type, s.enemy.rarity)}   Lv${s.level}  HP [${hp.bar}] ${hp.num}  ${info.name}（${info.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）`,
+    `${miniSprite('player')}  ⚔  ${miniSprite(s.enemy.type, s.enemy.rarity)}   Lv${s.level}  HP [${php.bar}] ${php.num}  ${info.name}（${info.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）[${hp.bar}] ${hp.num}`,
     s.lastLog || 'Nibble 待命中…（向 CodeBuddy 提问即可发动攻击）',
   ].join('\n')
 }
@@ -656,6 +976,57 @@ function arsenalSummary(s) {
     streakBonus: atk.streakBonus, // 连击提供的攻击加成（%）
     last: ld ? { id: ld.id, name: ld.name, rarity: ld.rarity, power: ld.power, story: ld.story || '', at: (s.lastDrop && s.lastDrop.at) || 0 } : null,
   }
+}
+
+// 技能书汇总（供状态栏 tooltip / 面板 / 扩展使用）
+// 槽位规则：4 槽、必须 4 本不同的书、全手动（不自动替换）；expect 与 combos 只用于展示
+function skillSummary(s) {
+  const bk = (s && s.skills) || { owned: {}, pity: 0 }
+  const slots = normalizeSlots((s && s.skillSlots) || [], bk.owned)
+  const ld = s && s.lastSkillDrop && SKILL_INDEX[s.lastSkillDrop.id] ? SKILL_INDEX[s.lastSkillDrop.id] : null
+  const combos = combosOf(slots)
+  const filled = slots.filter(Boolean).length
+  return {
+    owned: Object.keys(bk.owned).length,
+    total: SKILL_TOTAL,
+    pity: bk.pity,
+    pityLimit: SKILL_PITY_LIMIT,
+    ownedMap: bk.owned,
+    slots,
+    filled,
+    expect: slotExpect(slots),
+    combos: combos.map((c) => ({ id: c.id, name: c.name, desc: c.desc })),
+    // 首次引导：拿到了书但一本都没上阵 → 面板把技能页入口点亮
+    guide: Object.keys(bk.owned).length > 0 && filled === 0,
+    last: ld ? { id: ld.id, name: ld.name, rarity: ld.rarity, tag: ld.tag, tagLabel: ld.tagLabel, story: ld.story || '', at: (s.lastSkillDrop && s.lastSkillDrop.at) || 0 } : null,
+  }
+}
+
+// 装配 / 卸下：id 为 null → 清空该槽；未拥有的书忽略
+// 同一本只能占一个槽（先把它从别的槽摘掉，再写入目标槽）
+function equipSkill(id, slot) {
+  const s = loadSave()
+  const bk = ensureSkills(s)
+  const i = Math.max(0, Math.min(3, Number(slot) || 0))
+  if (!s.skillSlots) s.skillSlots = emptySlots()
+  if (!id || !SKILL_INDEX[id] || !bk.owned[id]) {
+    s.skillSlots[i] = null
+  } else {
+    for (let k = 0; k < 4; k++) if (s.skillSlots[k] === id) s.skillSlots[k] = null
+    s.skillSlots[i] = id
+  }
+  s.skillSlots = normalizeSlots(s.skillSlots, bk.owned)
+  saveSave()
+  return s.skillSlots
+}
+
+// 一键推荐上阵（面板按钮用；只挑期望最高的一组，不改收集与保底）
+function autoEquipSkills() {
+  const s = loadSave()
+  const bk = ensureSkills(s)
+  s.skillSlots = autoSlots(bk.owned)
+  saveSave()
+  return s.skillSlots
 }
 
 // 武器库卡片：收集进度 + 保底进度 + 按稀有度分组列出已收集武器（纯收集，不影响战斗数值）
@@ -742,12 +1113,18 @@ function reset() {
   save = freshSave()
   spawnEnemy(save)
   saveSave()
-  return '♻️ 已重置等级/经验/战绩/武器库/怪物库与当前敌人'
+  return '♻️ 已重置等级/经验/战绩/武器库/技能书/怪物库与当前敌人'
 }
 
 module.exports = {
   loadSave, reloadSave, saveSave, attack, spawnEnemy, statusLine, battleLog, card, panel, miniSprite,
   reset, hpBar, xpNeed, dataDir, arsenalCard, arsenalSummary, equippedWeapon, equipWeapon,
+  // 技能书（第一刀：收集 + 装配；出手在第二刀接入）
+  skillSummary, equipSkill, autoEquipSkills, SKILLS, SKILL_INDEX, SKILL_TOTAL, SKILL_RARITY_COUNTS,
+  SKILL_POWER, SKILL_WEIGHT, SKILL_TIER, SKILL_DROP_RATE, SKILL_PITY_LIMIT, SKILL_RARITY_DROP, rollSkill,
+  TAG_KEYS, TAG_LABEL, TAG_POWER, TAG_DESC, COMBOS, slotExpect, combosOf, autoSlots, skillSpriteGrid,
+  // 风险层（第三刀）：玩家血量与怪物反击
+  playerMaxHp, playerCounter, playerHpOf, COUNTER_R,
   playerAtk, playerAtkWith,
   // 连击：状态查询 + 档位常量（IDE 扩展比较档位跨越来触发超载演出）
   streakState, streakTag,

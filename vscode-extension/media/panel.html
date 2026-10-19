@@ -51,11 +51,25 @@
      皮肤与战斗页对齐：0 圆角 + 2px 暖色硬边 + 像素字体。
      背景（坐标纸 + 顶部暖光）画在 body 上，这里只管内容。 */
   /* 顶部多留一点：右上角的 ≡ 是全局悬浮菜单，避免压住列表头一行 */
-  #arsenalView, #bestiaryView {
+  #arsenalView, #bestiaryView, #skillView {
     padding:38px 12px 10px;
     /* 像素字体：字号必须锁 12 的整数倍，非整数倍会字形发虚 */
     font-family:'NibblePixel', ui-monospace, monospace; font-size:12px; line-height:16px;
   }
+  /* 技能书页：4 个槽位（点格子卸下；详情卡里点槽位按钮装配） */
+  .kslotsView { display:flex; align-items:center; gap:8px; margin:0 0 10px; }
+  .kslotsView .ktitle { color:var(--dim); }
+  .kslotView {
+    display:flex; align-items:center; gap:6px; padding:4px 6px;
+    background:#100c0a; border:2px solid #2e231c; cursor:pointer;
+  }
+  .kslotView:hover { border-color:#8a5a2a; }
+  .kslotView.empty { border-style:dashed; color:#4a5265; }
+  .kslotView canvas { width:24px; height:24px; image-rendering:pixelated; display:block; }
+  .kslotView .kname { max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kslotsView .kexp { margin-left:auto; color:var(--core); }
+  /* 详情卡里的 4 个槽位按钮：单独一行（与「一键推荐」分列） */
+  .kslotBtns { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
   /* 已遭遇但未击败：灰调（由 JS 叠灰色），亮度介于"暗剪影"与"彩色"之间 */
   .wcell.seen { opacity:.72; }
   /* 收集进度：按各稀有度数量比例分段（不是等宽彩条）。
@@ -120,17 +134,21 @@
 <!-- 悬浮菜单必须放在所有视图之上：它是三个视图共用的全局导航。
      放进战斗视图内部时，一进武器库/怪物库它就跟着隐藏了，导致回不到战斗页。 -->
 <nav class="nav" id="nav">
-  <button class="navBtn" id="navBtn" aria-label="菜单" title="菜单：战斗 / 武器库 / 怪物库"><i></i><i></i><i></i></button>
+  <button class="navBtn" id="navBtn" aria-label="菜单" title="菜单：战斗 / 武器库 / 怪物库 / 技能书"><i></i><i></i><i></i></button>
   <div class="navMenu" id="navMenu">
     <button class="navItem on" id="tabBattle">战斗</button>
     <button class="navItem" id="tabArsenal">武器库 <b id="navWpn"></b></button>
     <button class="navItem" id="tabBestiary">怪物库 <b id="navEnemy"></b></button>
+    <button class="navItem" id="tabSkill">技能书 <b id="navSkill"></b></button>
   </div>
 </nav>
 
 <div id="battleView">
   <div class="sceneWrap stage" id="sceneWrap">
     <canvas id="scene"></canvas>
+
+    <!-- 技能施放横幅（第四刀·表现）：宿主推 type:'cast' 时短暂显示，跳变显隐、不做过渡 -->
+    <div class="castBan hidden" id="castBan"><canvas id="castIcon" width="24" height="24" class="hidden"></canvas><b id="castName"></b><span id="castTag"></span></div>
 
     <div class="hud" id="hud">
       <div class="actor" id="hudPlayer">
@@ -152,6 +170,14 @@
       <span class="wname" id="slotName">未装备</span>
     </div>
 
+    <!-- 技能书 4 槽：与左下角武器槽对称；全手动装配，点任意格子去技能书页 -->
+    <div class="kslotWrap" id="kslotWrap" title="点击去技能书页装配（最多 4 本，必须不同）">
+      <div class="kslot empty" data-slot="0"><canvas width="24" height="24"></canvas><span class="ph">1</span></div>
+      <div class="kslot empty" data-slot="1"><canvas width="24" height="24"></canvas><span class="ph">2</span></div>
+      <div class="kslot empty" data-slot="2"><canvas width="24" height="24"></canvas><span class="ph">3</span></div>
+      <div class="kslot empty" data-slot="3"><canvas width="24" height="24"></canvas><span class="ph">4</span></div>
+    </div>
+
     <div class="ops">
       <span class="log" id="log">Nibble 待命中…</span>
       <span class="opsBtns">
@@ -163,6 +189,7 @@
       <span class="wmeta wpn" id="atk"></span>
       <span class="wmeta wpn" id="hpnum">--/--</span>
       <span class="wmeta wpn" id="wpn"></span>
+      <span class="wmeta wpn" id="ksum"></span>
     </div>
 
     <!-- 超载演出（≥50 连，扩展推 burst 时短暂显示）：闪白 + 像素横幅，跳变显隐、不做过渡 -->
@@ -204,6 +231,21 @@
     </div>
   </div>
   <div id="bgroups"></div>
+</div>
+<!-- 技能书页：与武器库/怪物库同构（进度条 / 图例 / 4 槽 / 详情卡 / 分组网格） -->
+<div id="skillView" class="hidden">
+  <div class="abar" id="kbar"><span><i></i></span><span><i></i></span><span><i></i></span><span><i></i></span></div>
+  <div class="alegend" id="klegend"></div>
+  <div class="kslotsView" id="kslotsView"></div>
+  <div class="adetail" id="kdetail">
+    <canvas id="kdetailIcon" width="24" height="24"></canvas>
+    <div class="atext">
+      <div class="aname" id="kdetailName">—</div>
+      <div class="astory" id="kdetailStory">点选下方格子，查看这本技能书的注记与可触发的组合</div>
+    </div>
+    <div class="abtns" id="kdetailBtns"></div>
+  </div>
+  <div id="kgroups"></div>
 </div>
 <!--PET_JS-->
 <!--SCENE_JS-->

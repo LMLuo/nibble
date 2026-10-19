@@ -26,8 +26,13 @@ let lastDefeats = -1
 let lastStreakTier = -1
 let lastKey = ''
 let lastDropAt = -1
+let lastSkillDropAt = -1
+let lastKnockbackAt = -1
 let lastArsenalDefeats = -1
 let lastBestiaryKey = ''
+let lastSkillKey = ''
+let lastCastAt = -1 // 技能出手（第四刀·表现）：本次施放的唯一时间戳，用于去重推 type:'cast'
+let castPipe = null // 施放管线（第五刀·表现）：{ frames, phase } —— 相位时钟在宿主这边走（tickMs 可配置）
 
 // 定位素材/渲染模块。顺序：
 //   1) config.json 指向的工作区插件目录（本地开发时用，保持单一数据源）
@@ -64,6 +69,7 @@ const flat = (grid) => {
 function buildState() {
   const s = sp.reloadSave()
   const arsenal = sp.arsenalSummary(s)
+  const skills = sp.skillSummary(s) // 技能书：收集 + 4 槽装配 + 出手倍率（标签效果见 10 文档 3.2.1）
   const sk = sp.streakState(s) // 连击（超 10 分钟窗口 = 0）
   const shown = sp.equippedWeapon(s) // 战斗页展示即生效：手动装备 → 否则自动取最高战力
   const weaponSprite = shown ? sp.weaponSpriteGrid(shown.id, true) : null
@@ -94,14 +100,23 @@ function buildState() {
     streakBonus: sk.bonus,
     lastDmg: Math.max(0, Number(s.lastDmg) || 0), // 伤害飘字数值（0 = 未命中）
     // 换武器 / 最高战力变化也要触发推送，故把生效武器一并计入 key；连击数同理（徽标实时更新）
+    // 技能书：收集数与 4 槽装配变化同样并入 key
     key: s.enemy.type + '|' + s.enemy.rarity + '|' + s.enemy.maxHp + '|' + s.battles +
-      '|' + (s.equipped || '') + '|' + (shown ? shown.id : '') + '|' + sk.count,
+      '|' + (s.equipped || '') + '|' + (shown ? shown.id : '') + '|' + sk.count +
+      '|' + skills.owned + '|' + skills.slots.join(','),
     arsenal,
+    skills,
     weaponSprite: weaponSprite ? flat(weaponSprite) : null,
     weaponName: shown ? shown.name : null,
     weaponRarity: shown ? shown.rarity : null,
     weaponPower: shown ? shown.power : 0, // 战力（百分比攻击加成）
     weaponColor: shown ? sp.RARITY_COLOR[shown.rarity] : null,
+    // 风险层（第三刀）：玩家血量 / 被击退时间戳（归零 = 换新怪 + 断连击，零惩罚）
+    playerHp: sp.playerHpOf(s),
+    playerMaxHp: sp.playerMaxHp(s.level),
+    knockbackAt: Number(s.knockbackAt) || 0,
+    // 技能出手（第四刀·表现）：本次施放了哪本书 + 标签实际生效结果（at 去重后推 type:'cast'）
+    lastCast: s.lastCast || null,
   }
 }
 
@@ -123,6 +138,41 @@ function buildArsenalData(arsenal) {
     atkTotal: arsenal.atkTotal,
     list: sp.WEAPONS,
     sprites,
+  }
+}
+
+// 技能书全量数据（50 本：清单 + 素材 + 收集进度 + 4 槽），仅在收集/装配变化时推送
+function buildSkillData(sum) {
+  const sprites = {}
+  for (const sk of sp.SKILLS) {
+    // 技能书图鉴**不跟武器统一**：用满格 24 内框（作者定档，2026-10-14），
+    // 24×24 的纹章在武器那套 17 内框下会糊，技能书的辨识度比"视觉重量一致"更重要
+    const g = sp.skillSpriteGrid(sk.id, true)
+    sprites[sk.id] = g ? flat(g) : null
+  }
+  return {
+    type: 'skillData',
+    owned: sum.ownedMap,
+    pity: sum.pity,
+    pityLimit: sum.pityLimit,
+    slots: sum.slots,
+    expect: sum.expect,
+    combos: sum.combos,
+    guide: sum.guide,
+    list: sp.SKILLS.map((sk) => ({
+      id: sk.id,
+      name: sk.name,
+      rarity: sk.rarity,
+      tag: sk.tag,
+      tagLabel: sk.tagLabel,
+      power: sk.power,
+      weight: sk.weight,
+      story: sk.story || '',
+    })),
+    sprites,
+    tags: sp.TAG_LABEL,
+    tagDesc: sp.TAG_DESC,
+    combosAll: sp.COMBOS,
   }
 }
 
@@ -176,15 +226,20 @@ function tick() {
 
   // —— 状态栏（常驻，随攻击实时变化）——
   if (statusItem) {
-    const filled = Math.max(0, Math.min(8, Math.round((Math.max(0, st.hp) / st.maxHp) * 8)))
+    // 心形条 = 玩家 HP（第三刀改口径：敌人血量在面板血条与 tooltip 里看）
+    const filled = Math.max(0, Math.min(8, Math.round((Math.max(0, st.playerHp) / st.playerMaxHp) * 8)))
     statusItem.text =
       '$(heart) Lv' + st.level + ' ' + '█'.repeat(filled) + '░'.repeat(8 - filled) +
-      ' ' + st.hp + '/' + st.maxHp + ' ' + st.enemyName
+      ' ' + st.playerHp + '/' + st.playerMaxHp + ' ' + st.enemyName
     const last = st.arsenal.last
     statusItem.tooltip =
       'Nibble · Lv' + st.level + '　攻击 ' + st.battles + ' 次　击败 ' + st.defeats + ' 次' +
       (st.streak >= sp.STREAK_T1 ? '　连击 ×' + st.streak + '（攻击 +' + st.streakBonus + '%）' : '') + '\n' + st.log +
+      '\n玩家 HP ' + st.playerHp + '/' + st.playerMaxHp + '　敌方 HP ' + st.hp + '/' + st.maxHp +
       '\n⚔ 武器库 ' + st.arsenal.owned + '/' + st.arsenal.total + '　保底 ' + st.arsenal.pity + '/' + st.arsenal.pityLimit +
+      '\n📖 技能书 ' + st.skills.owned + '/' + st.skills.total + '　已上阵 ' + st.skills.filled + '/4' +
+      (st.skills.expect > 1 ? '（倍率 ×' + st.skills.expect.toFixed(2) + '）' : '') +
+      (st.skills.guide ? '　← 有书未上阵，去「技能书」页装配' : '') +
       (last ? '\n最近获得：' + sp.RARITY_LABEL[last.rarity] + '·' + last.name : '') +
       '\n（点击显示底部面板）'
   }
@@ -192,6 +247,67 @@ function tick() {
   // —— 面板 / 停靠视图 ——
   const targets = [viewWebview, panel && panel.webview].filter(Boolean)
   if (!targets.length) return
+  // 技能出手（第五刀·施放管线）：面板据此播"施放"反馈——4 槽高亮 + 施放横幅 + 场景光环/招式特效。
+  // 只在真抽到书时推（普攻 lastCast 为 null），at 去重保证一次施放只推一次。
+  // ⚠️ 必须**先推 cast、再推 state**：面板收到 cast 就冻结"命中前的旧值"，
+  //    顺序反了会先闪一帧"血已经掉了 / 怪已经换了"。
+  const cast = st.lastCast
+  if (cast && cast.id && cast.at && cast.at !== lastCastAt) {
+    lastCastAt = cast.at
+    const fx = {
+      crit: !!cast.crit, chase: !!cast.chase, pierce: !!cast.pierce, aim: !!cast.aim,
+      rend: Number(cast.rend) || 0, guard: cast.guard || null, leech: !!cast.leech,
+      surge: !!cast.surge, heal: Number(cast.heal) || 0, reflect: Number(cast.reflect) || 0,
+    }
+    // 击杀时把"被打死的那只"一并带上：命中帧之前面板要继续画它，不能提前换成新怪
+    let killedEnemy = null
+    if (cast.killed && cast.enemyType) {
+      const kInfo = sp.enemyInfo(cast.enemyType)
+      killedEnemy = {
+        type: cast.enemyType,
+        tier: kInfo.tier, // 场景主题也跟着冻结（新怪可能是另一个 tier）
+        rarity: cast.enemyRarity,
+        rarityLabel: sp.RARITY_LABEL[cast.enemyRarity] || '',
+        color: sp.RARITY_COLOR[cast.enemyRarity] || null,
+        name: kInfo.name,
+        tierLabel: kInfo.tierLabel,
+        sprite: flat(sp.enemyGrid(cast.enemyType, cast.enemyRarity, false)),
+      }
+    }
+    // 施放管线（第五刀）：起手 → 生成 → 命中 →（有追击才加）追击 →（有反击才加）反击
+    const frames = 3 + (cast.chase ? 1 : 0) + (cast.countered ? 1 : 0)
+    targets.forEach((w) => post(w, {
+      type: 'cast',
+      id: cast.id,
+      name: cast.name,
+      rarity: cast.rarity,
+      color: sp.RARITY_COLOR[cast.rarity],
+      icon: flat(sp.skillSpriteGrid(cast.id, true)), // 施放横幅上的书图标（满格 24，与图鉴同口径）
+      tier: cast.tier,
+      tag: cast.tag,
+      tagLabel: (sp.TAG_LABEL && sp.TAG_LABEL[cast.tag]) || cast.tag,
+      slot: cast.slot,
+      power: cast.power,
+      form: cast.form || '', // 招式原语（第五刀）：12 选 1
+      dmg: Number(cast.dmg) || 0,
+      combos: (cast.combos || []).map((id) => {
+        const c = (sp.COMBOS || []).filter((x) => x.id === id)[0]
+        return c ? c.name : id
+      }),
+      frames,
+      impactAt: 2,
+      countered: !!cast.countered, // 未死 → 末帧是"怪物反击"拍（玩家 HP 在这一拍才解冻）
+      // 出手前快照：命中帧之前，面板与场景冻结显示这些旧值
+      hpBefore: Number(cast.hpBefore) || 0,
+      maxHpBefore: Number(cast.maxHpBefore) || 0,
+      playerHpBefore: Number(cast.playerHpBefore) || 0,
+      killed: !!cast.killed,
+      killedEnemy,
+      fx,
+    }))
+    // 相位时钟：本 tick 的 tick 消息带 phase 0，之后每 tick +1，播完即清
+    castPipe = { frames, phase: 0 }
+  }
   if (st.key !== lastKey) {
     lastKey = st.key
     targets.forEach((w) => post(w, Object.assign({ type: 'state' }, st)))
@@ -202,6 +318,8 @@ function tick() {
   const lastDrop = st.arsenal.last
   if (lastDrop && lastDrop.at && lastDrop.at !== lastDropAt) {
     lastDropAt = lastDrop.at
+    // 图标必须是「这把新掉的武器」，不能复用 st.weaponSprite（那是当前装备/最高战力那把）
+    const dropGrid = sp.weaponSpriteGrid(lastDrop.id, true)
     const msg = {
       type: 'drop',
       name: lastDrop.name,
@@ -209,14 +327,42 @@ function tick() {
       color: sp.RARITY_COLOR[lastDrop.rarity],
       rarityLabel: sp.RARITY_LABEL[lastDrop.rarity],
       story: lastDrop.story,
-      sprite: st.weaponSprite,
+      sprite: dropGrid ? flat(dropGrid) : null,
     }
     targets.forEach((w) => post(w, msg))
+  }
+  // 被击退（第三刀）：闪白 + 敌人消散帧（一次性演出），不弹 toast（日志里已有整句）
+  if (st.knockbackAt && st.knockbackAt !== lastKnockbackAt) {
+    lastKnockbackAt = st.knockbackAt
+    targets.forEach((w) => post(w, { type: 'knockback' }))
+  }
+  // 技能书掉落：与武器 toast 共用通道（用 kind 区分文案）
+  const skillDrop = st.skills.last
+  if (skillDrop && skillDrop.at && skillDrop.at !== lastSkillDropAt) {
+    lastSkillDropAt = skillDrop.at
+    const grid = sp.skillSpriteGrid(skillDrop.id, true)
+    targets.forEach((w) => post(w, {
+      type: 'drop',
+      kind: 'skill',
+      name: skillDrop.name,
+      rarity: skillDrop.rarity,
+      color: sp.RARITY_COLOR[skillDrop.rarity],
+      rarityLabel: sp.RARITY_LABEL[skillDrop.rarity],
+      story: skillDrop.story,
+      sprite: grid ? flat(grid) : null,
+    }))
   }
   // 武器库数据：击败数变化（=新掉落入库）时推送全量
   if (lastArsenalDefeats !== st.defeats) {
     lastArsenalDefeats = st.defeats
     const data = buildArsenalData(st.arsenal)
+    targets.forEach((w) => post(w, data))
+  }
+  // 技能书数据：收集数 / 4 槽装配变化时推送全量
+  const skillKey = st.skills.owned + '|' + st.skills.slots.join(',')
+  if (skillKey !== lastSkillKey) {
+    lastSkillKey = skillKey
+    const data = buildSkillData(st.skills)
     targets.forEach((w) => post(w, data))
   }
   // 怪物库数据：遭遇/击败状态变化时推送全量
@@ -236,7 +382,15 @@ function tick() {
     maxHp: st.maxHp,
     level: st.level,
     log: st.log,
+    // 风险层（第三刀）：面板把玩家 HP 显示在数值区，敌人血条继续用上方的 hp/maxHp
+    playerHp: st.playerHp,
+    playerMaxHp: st.playerMaxHp,
+    // 施放管线（第五刀·表现）：本 tick 播到第几帧（0 = 起手，-1 = 没有在播）。
+    // 相位时钟必须由宿主走：tickMs 是可配置的，面板自己数帧会跟节拍脱钩。
+    castPhase: castPipe ? castPipe.phase : -1,
   }
+  // 相位推进放在"装好这条 tick 消息之后"：本 tick 推出去的相位要是**当前**这一帧
+  if (castPipe && ++castPipe.phase >= castPipe.frames) castPipe = null
   targets.forEach((w) => post(w, t))
 }
 
@@ -266,13 +420,33 @@ function wireMessages(webview) {
       lastKey = ''
       lastArsenalDefeats = -1
       lastBestiaryKey = ''
+      lastSkillKey = ''
+      lastSkillDropAt = -1
+      lastKnockbackAt = -1
       lastStreakTier = -1
+      lastCastAt = -1
+      castPipe = null // 重置后旧档的 lastCast 不该再播一遍
       tick()
     } else if (msg.type === 'equip') {
       try {
         sp.equipWeapon(msg.id || null) // null = 回到"跟随最近获得"
         lastKey = ''
         lastArsenalDefeats = -1
+        tick()
+      } catch { /* 存档读写失败时静默忽略 */ }
+    } else if (msg.type === 'skillEquip') {
+      // 4 槽手动装配：id 为 null 时表示清空该槽
+      try {
+        sp.equipSkill(msg.id || null, msg.slot)
+        lastKey = ''
+        lastSkillKey = ''
+        tick()
+      } catch { /* 存档读写失败时静默忽略 */ }
+    } else if (msg.type === 'skillAuto') {
+      try {
+        sp.autoEquipSkills()
+        lastKey = ''
+        lastSkillKey = ''
         tick()
       } catch { /* 存档读写失败时静默忽略 */ }
     } else if (msg.type === 'expand') {
@@ -412,12 +586,21 @@ function activate(context) {
       openEditorPanel()
       post(panel && panel.webview, { type: 'view', view: 'bestiary' })
     }),
+    vscode.commands.registerCommand('nibble.openSkill', () => {
+      openEditorPanel()
+      post(panel && panel.webview, { type: 'view', view: 'skill' })
+    }),
     vscode.commands.registerCommand('nibble.reset', () => {
       sp.reset()
       lastKey = ''
       lastArsenalDefeats = -1
       lastBestiaryKey = ''
+      lastSkillKey = ''
+      lastSkillDropAt = -1
+      lastKnockbackAt = -1
       lastStreakTier = -1
+      lastCastAt = -1
+      castPipe = null
       tick()
       vscode.window.showInformationMessage('♻️ Nibble 等级/经验/战绩已重置')
     }),

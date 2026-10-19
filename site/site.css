@@ -240,6 +240,8 @@ h1 .hl { color: var(--core); text-shadow: 5px 5px 0 #0f3b39; }
 }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--core); border-bottom-color: var(--core); }
+/* pet.js 在"有书但一本没上阵"时给技能书页签加 .hl（首次引导） */
+.tab.hl { color: var(--hearth); }
 
 .panel { padding: 14px; max-height: 460px; overflow-y: auto; }
 
@@ -345,6 +347,27 @@ h1 .hl { color: var(--core); text-shadow: 5px 5px 0 #0f3b39; }
 }
 .abtns button:hover { border-color: var(--core); color: var(--core); }
 .abtns button:disabled { opacity: .55; cursor: default; border-color: var(--line); color: var(--dim); }
+
+/* —— 技能书页：4 个上阵槽 + 详情卡里的换槽按钮 ——
+   （进度条 / 图例 / 分组网格 / 格子复用上面那套 .abar/.alegend/.agroup/.agrid/.wcell） */
+.kslotsView { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.kslotsView .ktitle { font: 600 .76rem/1.6 var(--mono); color: var(--dim); }
+.kslotView {
+  display: flex; align-items: center; gap: 6px; padding: 5px 7px;
+  background: var(--panel); border: 2px solid var(--line); cursor: pointer;
+  font: 600 .76rem/1.6 var(--mono); color: var(--text);
+}
+.kslotView:hover { border-color: var(--core); }
+.kslotView.empty { border-style: dashed; color: var(--dim); }
+.kslotView canvas { width: 24px; height: 24px; image-rendering: pixelated; flex: none; }
+.kslotView .kname { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kslotsView .kexp { margin-left: auto; color: var(--core); font: 600 .78rem/1.6 var(--mono); }
+.kslotBtns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kslotBtns button {
+  min-height: 32px; padding: 0 10px; font: 600 .78rem/1 var(--mono);
+  background: var(--panel); color: var(--text); border: 2px solid var(--line); cursor: pointer;
+}
+.kslotBtns button:hover { border-color: var(--core); color: var(--core); }
 
 /* pet.js 的战利品 toast：改挂到演示窗口内（落在标签栏下方，不挡标签与按钮） */
 #toast {

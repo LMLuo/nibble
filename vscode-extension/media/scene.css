@@ -40,7 +40,9 @@
   display: block; width: 72px; height: 6px;
   background: rgba(8, 5, 4, .62);
 }
-.hbar > i { display: block; height: 100%; width: 50%; background: #7cd44a; }
+/* 血条宽度做一步 220ms 的线性过渡：命中帧"解冻"时从旧值滑到新值，掉血不再是一格硬切
+   （房规的"跳变"指特效不补间；血条是数值显示，走过渡更跟手） */
+.hbar > i { display: block; height: 100%; width: 50%; background: #7cd44a; transition: width .22s linear; }
 
 /* —— 悬浮菜单：场景右上角一个 ≡，点开下拉浮层 ——
    位置选右上角是因为主角在左、敌人在中右，那块只有天空，不会跟任何元素打架。 */
@@ -70,6 +72,8 @@
 /* .active 是 pet.js 现有的选中态类（它切视图时会 toggle），这里一并接上 */
 .navItem.on, .navItem.active { color: #17110a; background: var(--accent, #d8c08a); }
 .navItem b { font-weight: normal; opacity: .7; }
+/* 首次引导：拿到了技能书但一本都没上阵 → 把「技能书」入口点亮 */
+.navItem.hl { color: #ffe9a8; text-shadow: 0 0 8px rgba(255, 233, 168, .55); }
 
 /* —— 武器格子：场景左下角（大圆角 + 稀有度色描边与发光，样式按参考图）——
    尺寸由 scene.js 按角色的同一套逻辑像素档位写进 --slot / --icon */
@@ -97,6 +101,26 @@
   color: #ddd; text-shadow: 0 2px 0 rgba(0, 0, 0, .85);
 }
 
+/* —— 技能书 4 槽：场景右下角（与左下角武器槽对称）——
+   全手动装配：空槽 = 普攻，不惩罚；点任意格子去技能书页 */
+.kslotWrap {
+  position: absolute; right: 12px; bottom: 46px; z-index: 2;
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+}
+.kslot {
+  width: var(--kslot, 34px); height: var(--kslot, 34px);
+  border: 2px solid #8a8a8a; border-radius: 6px; background: rgba(10, 8, 12, .5);
+  display: flex; align-items: center; justify-content: center;
+}
+.kslot.empty { border-style: dashed; }
+.kslot.empty > canvas { display: none; }
+.kslot .ph { display: none; color: #4a5265; font-size: 12px; font-weight: 700; }
+.kslot.empty .ph { display: block; }
+.kslot > canvas {
+  width: var(--kicon, 24px); height: var(--kicon, 24px);
+  display: block; image-rendering: pixelated;
+}
+
 /* —— 底部操作条：日志 + 按钮 + 武器数值 —— */
 .ops {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
@@ -113,7 +137,7 @@
   color: #b3a591; flex: 0 0 auto; white-space: nowrap;
 }
 /* 窄栏：HUD 条腾地方 —— 收起次要数值，保证日志和按钮不被挤压 */
-.sceneWrap.s3 #atk, .sceneWrap.s3 #hpnum { display: none; }
+.sceneWrap.s3 #atk, .sceneWrap.s3 #hpnum, .sceneWrap.s3 #ksum { display: none; }
 .opsBtns { display: flex; gap: 6px; flex: 0 0 auto; }
 .opsBtns button {
   font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px;
@@ -147,6 +171,43 @@
 .dmg.hot {
   color: #ffd75e;
   text-shadow: 2px 0 0 #3a2008, -2px 0 0 #3a2008, 0 2px 0 #3a2008, 0 -2px 0 #3a2008, 0 3px 0 rgba(0, 0, 0, .45);
+}
+
+/* ============================================================
+   技能施放（第四刀·表现）—— 让"这一击用了哪本书"可见
+   ① 施放横幅：书名 + 标签，场景顶部居中（跳变显隐、不做过渡）
+   ② 4 槽高亮：抽中哪本亮哪格（走 box-shadow，因为 borderColor 被 JS 内联的稀有度色占用）
+   ③ 技能飘字：按标签色描边（普攻保持原样）
+   详细口径见 docs/游戏升级规划/10-技能书与技能库设计.md「技能特效规格」
+   ============================================================ */
+.castBan {
+  /* ⚠️ top:62px 是刻意的：掉落 toast（#toast，fixed top:12px，z-index:60）与施放几乎总是同时发生
+     ——每次击杀都掉一把武器、那一击也一定是一次施放——顶格摆会被 toast 盖住，所以让开一条道 */
+  position: absolute; left: 50%; top: 62px; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 7px; padding: 3px 9px 3px 6px; pointer-events: none;
+  background: rgba(10, 8, 12, .92); border: 2px solid var(--castc, #ffd75e);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .5);
+}
+/* 横幅左侧的书图标（宿主随 cast 推满格 24 网格，本地预览由 mock 提供） */
+.castBan canvas {
+  width: 24px; height: 24px; image-rendering: pixelated;
+  background: rgba(255, 246, 216, .08); border: 1px solid rgba(255, 246, 216, .25);
+}
+.castBan b {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px;
+  color: var(--castc, #ffd75e); text-shadow: 0 2px 0 rgba(0, 0, 0, .8);
+}
+.castBan span {
+  font-family: 'NibblePixel', monospace; font-size: 12px; line-height: 12px; color: #cbbfa8;
+}
+/* 重档（史诗/传说）：外圈再加一层金描边，强化"这一击很重" */
+.castBan.heavy { box-shadow: 0 0 0 2px rgba(255, 215, 94, .4), 0 2px 0 rgba(0, 0, 0, .5); }
+.kslot.cast { border-color: #fff6d8; box-shadow: 0 0 0 2px #fff6d8, 0 0 10px rgba(255, 215, 94, .7); }
+.dmg.cast { color: var(--dmgc, #fff); }
+/* 必暴那一击的飘字：放大 + 金色 + 微光（普通/ hot 飘字不变） */
+.dmg.crit {
+  font-size: 17px; line-height: 17px; color: #ffd75e;
+  text-shadow: 2px 0 0 #3a2008, -2px 0 0 #3a2008, 0 2px 0 #3a2008, 0 -2px 0 #3a2008, 0 3px 0 rgba(0, 0, 0, .5), 0 0 8px rgba(255, 215, 94, .5);
 }
 
 /* 超载演出：全屏闪白 + 顶部像素横幅（扩展开关，约 1.6 秒后跳变消失） */

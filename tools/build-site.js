@@ -212,11 +212,33 @@ function buildDemoData() {
     sprite: encodeGrid(sp.weaponSpriteGrid(w.id, 'box')),
   }))
 
+  // 技能书（50 本）：与武器同一套压缩网格；图标用满格 24（纹章缩小会糊，作者定档）
+  const skills = sp.SKILLS.map((sk) => ({
+    id: sk.id,
+    name: sk.name,
+    rarity: sk.rarity,
+    rarityLabel: sp.RARITY_LABEL[sk.rarity],
+    tag: sk.tag,
+    tagLabel: sk.tagLabel,
+    power: sk.power,
+    weight: sk.weight,
+    tier: sk.tier,
+    form: sk.form,
+    story: sk.story || '',
+    sprite: encodeGrid(sp.skillSpriteGrid(sk.id, true)),
+  }))
+
   // 演示存档：武器按 i % 3 !== 1 收集（自然覆盖四档稀有度），怪物按 demoProgress 铺开三态
   const owned = {}
   sp.WEAPONS.forEach((w, i) => {
     if (i % 3 !== 1) owned[w.id] = 1 + (i % 3)
   })
+  // 技能书同理；4 槽的预装直接跑真源的 autoSlots（保证演示里的「倍率 ×N / 组合 N」不是手写数字）
+  const skillOwned = {}
+  sp.SKILLS.forEach((sk, i) => {
+    if (i % 3 !== 1) skillOwned[sk.id] = 1 + (i % 2)
+  })
+  const skillSlots = sp.autoSlots(skillOwned)
   const prog = demoProgress(sp.ENEMIES.map((e) => e.id))
 
   const data = {
@@ -225,7 +247,15 @@ function buildDemoData() {
     player: encodeGrid(sp.decodeGrid('player').grid),
     enemies,
     weapons,
-    demo: { level: DEMO.level, exp: DEMO.exp, pity: DEMO.pity, owned, current: 'race_condition', ...prog },
+    skills,
+    // 技能书的标签 / 组合 / 掉率：全量一次带过去，前端装配时自己算倍率与组合
+    skillTags: sp.TAG_LABEL,
+    skillTagDesc: sp.TAG_DESC,
+    skillCombos: sp.COMBOS,
+    demo: {
+      level: DEMO.level, exp: DEMO.exp, pity: DEMO.pity, owned, current: 'race_condition', ...prog,
+      skillOwned, skillSlots, skillPity: 7,
+    },
     meta: {
       enemyTotal: sp.ENEMY_TOTAL,
       // 展示顺序固定"小怪 → 精英 → 头目"（与面板图鉴一致；enemies.js 里的 TIER_ORDER 是给卡片用的反序）
@@ -241,6 +271,14 @@ function buildDemoData() {
       weaponTotal: sp.WEAPON_TOTAL,
       weaponPower: sp.WEAPON_POWER,
       pityLimit: sp.PITY_LIMIT,
+      // 技能书：数字同样只从技能库真源取，页面上不写死
+      skillTotal: sp.SKILL_TOTAL,
+      skillTags: sp.TAG_KEYS.length,
+      skillCombos: sp.COMBOS.length,
+      skillDropRate: sp.SKILL_DROP_RATE,
+      skillPityLimit: sp.SKILL_PITY_LIMIT,
+      skillRarityDrop: sp.SKILL_RARITY_DROP,
+      skillRarityCounts: sp.SKILL_RARITY_COUNTS,
       // 主角像素图的色数（换素材后会变，所以页面上的数字从这里取，不写死）
       playerColors: px.PIXEL_DATA.player.palette.length,
       dropOdds: wp.RARITY_DROP,
@@ -314,6 +352,11 @@ function fill(tpl, data) {
     '{{ENEMY_WALL}}': wall,
     '{{BUG_QUOTES}}': quotes,
     '{{RARITY_TABLE}}': rarities,
+    '{{SKILL_TOTAL}}': m.skillTotal,
+    '{{SKILL_TAGS}}': m.skillTags,
+    '{{SKILL_COMBOS}}': m.skillCombos,
+    '{{SKILL_DROP}}': pct(m.skillDropRate),
+    '{{SKILL_PITY_LIMIT}}': m.skillPityLimit,
     '{{DROP_ODDS}}': order.map((r) => `${m.rarityLabel[r]} ${pct(m.dropOdds[r])}`).join(' / '),
     '{{POWER_ODDS}}': order.map((r) => `${m.rarityLabel[r]} +${m.weaponPower[r]}%`).join(' / '),
   }

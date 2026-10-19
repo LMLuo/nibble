@@ -23,10 +23,14 @@
 | 野生敌人：史莱姆 | `assets/slime.png` | 本项目（AI 生成原创） | CC0 | 否 |
 | 野生敌人：宝箱怪 | `assets/mimic.png` | 本项目（AI 生成原创） | CC0 | 否 |
 | 武器图标 ×80（每把独立，普通/稀有/史诗/传说四种风格） | `assets/weapons/sheets/*.png`（排列图）→ `assets/weapons/cells/*.png`（切片） | 本项目（AI 生成原创） | CC0 | 否 |
+| 技能书图标 ×50（每本独立，四档稀有度） | `assets/skills/sheets/*.png`（排列图）→ `assets/skills/cells/*.png`（切片） | 本项目（AI 生成原创） | CC0 | 否 |
 | HP 条 / 日志字符 | 程序化生成 | 本项目 | CC0 | 否 |
 
 > 武器素材由 `nibble-cb/tools/weapons-sprites.mjs` 构建生成（切片 + 抹水印 + 绿幕清理 + 密度裁剪 →
 > `plugins/nibble/hooks/weapons-pixels.js`），核验拼图见 `nibble-cb/legacy-mods/tools/preview/weapons/`。
+> 技能书素材由 `nibble-cb/tools/skills-sprites.mjs` 生成（→ `plugins/nibble/hooks/skills-pixels.js`），
+> 切片 / 缩放 / 调色板压缩的公共逻辑在 `nibble-cb/tools/pixel-sheet.mjs`（与武器管线共用），
+> 核验拼图见 `nibble-cb/legacy-mods/tools/preview/skills/`。`cells/` 为可再生产物，不入库。
 
 ## 构建期工具
 

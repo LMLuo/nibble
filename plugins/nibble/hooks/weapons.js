@@ -206,4 +206,6 @@ module.exports = {
   weaponSpriteGrid, WEAPON_PIXEL_DATA,
   // 战力（百分比攻击加成）：稀有度定档 + 已拥有最强武器查找
   WEAPON_POWER, bestOwnedWeapon,
+  // 素材工具：技能书素材（skills.js）复用同一套内框缩放，保证两条素材管线视觉重量一致
+  fitToBox,
 }

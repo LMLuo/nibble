@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nibble · 住在编辑器里的像素小狗（提问即攻击）</title>
-<meta name="description" content="一只像素小狗住在 CodeBuddy / VS Code 的状态栏和底部面板里。你每提一次问，它就替你打一只怪——升级、掉武器、收图鉴，连续提问还会点亮连击光环，进度跨会话保存。">
+<meta name="description" content="一只像素小狗住在 CodeBuddy / VS Code 的状态栏和底部面板里。你每提一次问，它就替你打一只怪——升级、掉武器、捡技能书、收图鉴，连续提问还会点亮连击光环，进度跨会话保存。">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0D0F14">
 <!-- 社交分享卡片（微信 / Twitter / Discord 抓这一组）。
@@ -27,6 +27,7 @@
     {{ENEMY_STATS}}  三档数量与难度倍率
     {{RARITY_TABLE}} 四档稀有度的数量 / 掉落率 / 战力
     {{VERSION}} {{ENEMY_TOTAL}} {{WEAPON_TOTAL}} {{PITY_LIMIT}} {{DROP_ODDS}} {{POWER_ODDS}} {{BUILD_DATE}}
+    {{SKILL_TOTAL}} {{SKILL_TAGS}} {{SKILL_COMBOS}} {{SKILL_DROP}} {{SKILL_PITY_LIMIT}}（技能书真源：plugins/nibble/hooks/skills.js）
   所以改完文案请跑 `npm run site`（= node tools/build-site.js --serve）生成 _site/ 再预览。
   本页不做数据收集：不引任何第三方脚本、不引外部字体，只有下方的 QR 图是本地文件。
 -->
@@ -68,7 +69,7 @@
     <div class="wrap hero-in">
       <p class="kicker"><span class="pt pt-sm" data-pt="PIXELPET">PIXEL PET</span><span class="blink">●</span> 运行中</p>
       <h1>提问<span class="hl">即</span>攻击</h1>
-      <p class="lede">一只像素小狗，住在 <b>CodeBuddy / VS Code</b> 的状态栏和底部面板里。你每问一句 AI（或保存一次文件），它就替你打一只怪——升级、掉武器、收图鉴，进度跨会话保存。连续提问还会累积<b>连击</b>：光环在脚下亮起，专注看得见。</p>
+      <p class="lede">一只像素小狗，住在 <b>CodeBuddy / VS Code</b> 的状态栏和底部面板里。你每问一句 AI（或保存一次文件），它就替你打一只怪——升级、掉武器、捡技能书、收图鉴，进度跨会话保存。连续提问还会累积<b>连击</b>：光环在脚下亮起，专注看得见；怪物也会反击，被击退只是白打一场，不扣任何东西。</p>
       <ul class="chips">
         <li>常驻底部面板</li>
         <li>自动待机动画</li>
@@ -92,12 +93,15 @@
           <button type="button" id="tabBattle" class="tab active">⚔ 战斗</button>
           <button type="button" id="tabArsenal" class="tab">🎒 武器库</button>
           <button type="button" id="tabBestiary" class="tab">📖 怪物库</button>
+          <button type="button" id="tabSkill" class="tab">✦ 技能书</button>
         </div>
         <div class="panel">
           <div id="battleView">
             <!-- 与扩展 panel.html 同构的场景化战斗页（scene.js 绘制；无 #nav：官网已有 tabs）-->
             <div class="sceneWrap stage" id="sceneWrap">
               <canvas id="scene"></canvas>
+              <!-- 施放横幅：这一击用了哪本书（样式在共享的 scene.css 里） -->
+              <div class="castBan hidden" id="castBan"><canvas id="castIcon" width="24" height="24" class="hidden"></canvas><b id="castName"></b><span id="castTag"></span></div>
               <div class="hud" id="hud">
                 <div class="actor" id="hudPlayer">
                   <span class="aname">拾玖 <b id="lv">Lv 1</b><b class="combo hidden" id="comboBadge">×12</b></span>
@@ -116,6 +120,13 @@
                 </div>
                 <span class="wname" id="slotName">未装备</span>
               </div>
+              <!-- 技能书 4 槽：与扩展同构（空槽 = 普攻；点格子去技能书页） -->
+              <div class="kslotWrap" id="kslotWrap" title="点击去技能书页装配（最多 4 本，必须不同）">
+                <div class="kslot empty" data-slot="0"><canvas width="24" height="24"></canvas><span class="ph">1</span></div>
+                <div class="kslot empty" data-slot="1"><canvas width="24" height="24"></canvas><span class="ph">2</span></div>
+                <div class="kslot empty" data-slot="2"><canvas width="24" height="24"></canvas><span class="ph">3</span></div>
+                <div class="kslot empty" data-slot="3"><canvas width="24" height="24"></canvas><span class="ph">4</span></div>
+              </div>
               <div class="ops">
                 <span class="log" id="log">Nibble 待命中…</span>
                 <span class="opsBtns">
@@ -124,6 +135,7 @@
                 <span class="wmeta wpn" id="atk"></span>
                 <span class="wmeta wpn" id="hpnum">--/--</span>
                 <span class="wmeta wpn" id="wpn"></span>
+                <span class="wmeta wpn" id="ksum"></span>
               </div>
               <div class="flash hidden" id="flash"></div>
               <div class="comboFx hidden" id="comboFx">
@@ -165,10 +177,26 @@
             </div>
             <div id="bgroups"></div>
           </div>
+
+          <!-- 技能书页：与扩展同构（进度条 / 图例 / 4 槽 / 详情卡 / 按稀有度分组） -->
+          <div id="skillView" class="hidden">
+            <div class="abar" id="kbar"><span><i></i></span><span><i></i></span><span><i></i></span><span><i></i></span></div>
+            <div class="alegend" id="klegend"></div>
+            <div class="kslotsView" id="kslotsView"></div>
+            <div class="adetail" id="kdetail">
+              <canvas id="kdetailIcon" width="24" height="24"></canvas>
+              <div class="atext">
+                <div class="aname" id="kdetailName">—</div>
+                <div class="astory" id="kdetailStory">点选下方格子，查看这本技能书的注记与可触发的组合</div>
+              </div>
+              <div class="abtns" id="kdetailBtns"></div>
+            </div>
+            <div id="kgroups"></div>
+          </div>
         </div>
         <div id="toast"><canvas id="toastIcon" width="24" height="24"></canvas><span id="toastText"></span></div>
       </div>
-      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，或切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴。在 IDE 里，你每提一次问 = 自动攻击一次，连续提问还会点亮连击。</p>
+      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，或切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴、切到「✦ 技能书」给拾玖配 4 本书——装配会真的改倍率与组合，下一次出手就按新配置抽。在 IDE 里，你每提一次问 = 自动攻击一次，连续提问还会点亮连击。</p>
       <noscript><p class="demo-hint warn">这个演示需要 JavaScript；不开也能看到下面所有介绍。</p></noscript>
 
       <!-- 记忆点：把你今天遇到的 Bug 丢给它（在浏览器里现算，不上传、不联网） -->
@@ -220,7 +248,7 @@
         <article class="card">
           <span class="num">2</span>
           <h3>它出手</h3>
-          <p>小狗前冲、怪物掉血。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂；遭遇即自动收录进「📖 怪物库」。连续提问累积<b>连击</b>：≥10 连攻击最多 +30%、脚下亮起光环；≥25 连转亮金；≥50 连超载演出。断连静默归零，不惩罚。</p>
+          <p>小狗前冲、怪物掉血。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂，精英与头目还会尖刺反弹、狂暴、护盾再生；遭遇即自动收录进「📖 怪物库」。连续提问累积<b>连击</b>：≥10 连攻击最多 +30%、脚下亮起光环；≥25 连转亮金；≥50 连超载演出。断连静默归零，不惩罚。</p>
         </article>
         <article class="card">
           <span class="num">3</span>
@@ -231,6 +259,16 @@
           <span class="num">4</span>
           <h3>武器真有用</h3>
           <p>每把武器提供战力加成：{{POWER_ODDS}}。不手动装也会自动取已拥有里最强的那把，也可以在图鉴里固定携带（★ 标记）。</p>
+        </article>
+        <article class="card">
+          <span class="num">5</span>
+          <h3>还会捡到技能书</h3>
+          <p>击败敌人有 <b>{{SKILL_DROP}}</b> 概率掉一本技能书：共 <b>{{SKILL_TOTAL}} 本</b>、{{SKILL_TAGS}} 种标签、{{SKILL_COMBOS}} 条组合，连续 {{SKILL_PITY_LIMIT}} 只没出稀有会保底一本。「📖 技能书」页收集与查看，可自由装配 <b>4 个技能槽</b>——空槽就是普攻，装书永不劣于不装。</p>
+        </article>
+        <article class="card">
+          <span class="num">6</span>
+          <h3>怪物也会反击</h3>
+          <p>拾玖有血量（<code>30 + 等级 × 6</code>，<b>击杀即回满</b>），怪物没被打死就会反击。血量见底只是<b>被击退一场</b>：满血、换一只新怪，<b>不降级、不丢武器 / 技能书</b>，该场无经验无掉落。</p>
         </article>
       </div>
       <p class="fine">战斗数值全在本地算：<b>不调用任何模型 API、不多花你一分钱（零 token）</b>，存档写在 <code>~/.codebuddy/plugins/data/nibble/save.json</code>，跨会话、跨窗口都接着打。</p>
@@ -304,7 +342,7 @@
       <div class="install-grid">
         <article class="card card-strong">
           <h3>方式 1 · 装扩展<span class="tag">推荐，开箱可用</span></h3>
-          <p>在 <a href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX 市场</a> 搜索 <b>Nibble</b> 安装，或命令面板执行：</p>
+          <p><b>VS Code</b> 用 <a href="https://marketplace.visualstudio.com/items?itemName=nibble.nibble" rel="noopener">Visual Studio Marketplace</a>；<b>CodeBuddy / VSCodium / Cursor</b> 用 <a href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX</a>。两边都搜 <b>Nibble</b>，或命令面板执行：</p>
           <div class="cmds">
             <div class="cmd">
               <code>Extensions: Install from VSIX...</code>
@@ -345,13 +383,25 @@
           </div>
           <p class="fine">需要 <b>Node ≥ 16</b>；Windows 下 CodeBuddy 的 hooks 走 Git Bash，故需安装 <a href="https://git-scm.com/download/win" rel="noopener">Git for Windows</a>。</p>
         </article>
+
+        <article class="card">
+          <h3>方式 3 · 免安装桌面版<span class="tag">Windows</span></h3>
+          <p>不想开编辑器？<a href="https://github.com/LMLuo/nibble-desktop" rel="noopener">nibble-desktop</a> 是独立的桌面伴生版：<b>免安装单文件 exe</b>（约 70 MB），双击就常驻桌面，在<b>任意程序里</b>敲空格 / 回车即攻击——只观察不拦截，正常打字完全不受影响。</p>
+          <div class="cmds">
+            <div class="cmd">
+              <code>Nibble-Portable-*.exe</code>
+              <button type="button" class="copy" data-copy="https://github.com/LMLuo/nibble-desktop/releases/latest">复制下载地址</button>
+            </div>
+          </div>
+          <p class="fine">到 <a href="https://github.com/LMLuo/nibble-desktop/releases" rel="noopener">Releases</a> 下载后直接双击运行；存档在 <code>%APPDATA%\Nibble</code>，<b>零联网</b>。首次运行 Windows 可能弹 SmartScreen 提示，点「更多信息 → 仍要运行」即可。</p>
+        </article>
       </div>
 
       <h3 class="wall-title">常用的几条</h3>
       <ul class="plain">
         <li><code>Nibble: 显示像素小生物（底部面板）</code></li>
         <li><code>Nibble: 攻击一次</code></li>
-        <li><code>Nibble: 打开武器库</code> / <code>Nibble: 打开怪物库</code></li>
+        <li><code>Nibble: 打开武器库</code> / <code>Nibble: 打开怪物库</code> / <code>Nibble: 打开技能书</code></li>
         <li><code>Nibble: 重置等级 / 经验 / 战绩</code></li>
         <li><code>Nibble: 关于匿名统计（发什么 / 如何关闭）</code></li>
       </ul>
@@ -402,6 +452,8 @@
     <div class="foot-links">
       <a href="https://github.com/LMLuo/nibble" rel="noopener">GitHub 源码</a>
       <a href="https://open-vsx.org/extension/nibble/nibble" rel="noopener">Open VSX</a>
+      <a href="https://marketplace.visualstudio.com/items?itemName=nibble.nibble" rel="noopener">VS Code 市场</a>
+      <a href="https://github.com/LMLuo/nibble-desktop/releases" rel="noopener">桌面版</a>
       <a href="https://github.com/LMLuo/nibble/blob/main/legacy-mods/CREDITS.md" rel="noopener">素材与版权</a>
       <a href="#privacy">隐私</a>
     </div>

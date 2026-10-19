@@ -2,7 +2,8 @@
 // enemies.js — 怪物数据 + 出现权重 + 难度数值模型（全数据驱动）
 // 设计文档：docs/游戏升级规划/08-怪物库与难度升级设计.md
 // 加怪 = 在 ENEMIES 追加 {id,name,tier,minLv,mech} + 在 enemies-stories.js 补故事 + 补素材重跑构建。
-// 难度为「A 档」：只做数值分级（tier/稀有度/等级三重缩放 + 精英机制），不引入玩家 HP 与失败判定。
+// 难度为「A+ 档」：数值分级（tier/稀有度/等级三重缩放 + 精英机制）+ 风险层（玩家 HP 与怪物反击，见 11 文档）
+// 归零零惩罚：被击退 = 换新怪 + 断连击，不降级、不丢收集。
 
 const { STORIES } = require('./enemies-stories')
 
@@ -10,10 +11,16 @@ const TIER_LABEL = { common: '小怪', elite: '精英', boss: '头目' }
 const TIER_ORDER = ['boss', 'elite', 'common'] // 图鉴展示顺序（稀有度感由高到低）
 const TIER_MUL = { common: 1.0, elite: 2.0, boss: 3.6 }
 const RARITY_MUL = { common: 1.0, rare: 1.15, epic: 1.35, legendary: 1.6 }
-const MECH_LABEL = { armor: '护甲', dodge: '闪避', regen: '自愈', shield: '护盾', split: '分裂' }
+const MECH_LABEL = {
+  armor: '护甲', dodge: '闪避', regen: '自愈', shield: '护盾', split: '分裂',
+  thorns: '尖刺', enrage: '狂暴', reShield: '护盾再生',
+}
 
 // mech 可选键：{ armor:N 每次受伤减伤N }、{ dodge:0~1 闪避概率 }、{ regen:N 每回合自愈N }
 //             { shield:N 开场N层护盾(伤害减半) }、{ split:true HP归零分裂一次 }
+//             A+ 档新增（只给精英/头目，每个最多 1 个新增机制、机制键 ≤3）：
+//             { thorns:N 每次受击反弹N给玩家 }、{ enrage:true HP<30% 时反击×1.5 }、
+//             { reShield:N 护盾被击穿后每N回合恢复1层 }
 const ENEMIES = [
   // —— 小怪 Common（20）：日常可见的 Bug ——
   { id: 'null_pointer', name: '空指针幽灵', tier: 'common', minLv: 1 },
@@ -38,27 +45,27 @@ const ENEMIES = [
   { id: 'bom_worm', name: 'BOM 头蠕虫', tier: 'common', minLv: 5 },
 
   // —— 精英 Elite（14）：深处的 Bug ——
-  { id: 'memory_leak', name: '内存泄漏巨蟒', tier: 'elite', minLv: 6, mech: { regen: 3 } },
-  { id: 'race_condition', name: '竞态幽灵', tier: 'elite', minLv: 6, mech: { dodge: 0.2 } },
-  { id: 'deadlock_spider', name: '死锁蛛', tier: 'elite', minLv: 7, mech: { armor: 2 } },
-  { id: 'stack_overflow', name: '栈溢出巨龙', tier: 'elite', minLv: 7, mech: { regen: 2 } },
-  { id: 'n_plus_one', name: 'N+1 查询兽', tier: 'elite', minLv: 8, mech: { split: true } },
-  { id: 'phantom_dependency', name: '幽灵依赖', tier: 'elite', minLv: 8, mech: { dodge: 0.18 } },
-  { id: 'flaky_test', name: '不稳定测试兽', tier: 'elite', minLv: 9, mech: { dodge: 0.25, shield: 2 } },
-  { id: 'circular_dependency', name: '循环依赖衔尾蛇', tier: 'elite', minLv: 9, mech: { regen: 4 } },
-  { id: 'cache_invalidation', name: '缓存失效魔', tier: 'elite', minLv: 10, mech: { shield: 3 } },
-  { id: 'dangling_pointer', name: '悬空指针', tier: 'elite', minLv: 10, mech: { armor: 3 } },
-  { id: 'handle_leak', name: '句柄泄漏水蛭', tier: 'elite', minLv: 11, mech: { regen: 3 } },
-  { id: 'encoding_nightmare', name: '编码噩梦', tier: 'elite', minLv: 11, mech: { armor: 2, dodge: 0.15 } },
-  { id: 'clock_drift', name: '时钟漂移', tier: 'elite', minLv: 12, mech: { dodge: 0.2, shield: 2 } },
-  { id: 'silent_failure', name: '静默失败幽灵', tier: 'elite', minLv: 12, mech: { shield: 3 } },
+  { id: 'memory_leak', name: '内存泄漏巨蟒', tier: 'elite', minLv: 6, mech: { regen: 3, enrage: true } },
+  { id: 'race_condition', name: '竞态幽灵', tier: 'elite', minLv: 6, mech: { dodge: 0.2, thorns: 2 } },
+  { id: 'deadlock_spider', name: '死锁蛛', tier: 'elite', minLv: 7, mech: { armor: 2, thorns: 2 } },
+  { id: 'stack_overflow', name: '栈溢出巨龙', tier: 'elite', minLv: 7, mech: { regen: 2, enrage: true } },
+  { id: 'n_plus_one', name: 'N+1 查询兽', tier: 'elite', minLv: 8, mech: { split: true, thorns: 2 } },
+  { id: 'phantom_dependency', name: '幽灵依赖', tier: 'elite', minLv: 8, mech: { dodge: 0.18, thorns: 2 } },
+  { id: 'flaky_test', name: '不稳定测试兽', tier: 'elite', minLv: 9, mech: { dodge: 0.25, shield: 2, reShield: 2 } },
+  { id: 'circular_dependency', name: '循环依赖衔尾蛇', tier: 'elite', minLv: 9, mech: { regen: 4, enrage: true } },
+  { id: 'cache_invalidation', name: '缓存失效魔', tier: 'elite', minLv: 10, mech: { shield: 3, reShield: 2 } },
+  { id: 'dangling_pointer', name: '悬空指针', tier: 'elite', minLv: 10, mech: { armor: 3, thorns: 2 } },
+  { id: 'handle_leak', name: '句柄泄漏水蛭', tier: 'elite', minLv: 11, mech: { regen: 3, enrage: true } },
+  { id: 'encoding_nightmare', name: '编码噩梦', tier: 'elite', minLv: 11, mech: { armor: 2, dodge: 0.15, thorns: 2 } },
+  { id: 'clock_drift', name: '时钟漂移', tier: 'elite', minLv: 12, mech: { dodge: 0.2, shield: 2, reShield: 2 } },
+  { id: 'silent_failure', name: '静默失败幽灵', tier: 'elite', minLv: 12, mech: { shield: 3, reShield: 3 } },
 
   // —— 头目 Boss（6）：系统的终极噩梦 ——
-  { id: 'segfault_titan', name: '段错误泰坦', tier: 'boss', minLv: 15, mech: { armor: 4, split: true } },
-  { id: 'entropy_virus', name: '熵增病毒', tier: 'boss', minLv: 18, mech: { regen: 6, shield: 3 } },
-  { id: 'legacy_colossus', name: '祖传代码巨像', tier: 'boss', minLv: 20, mech: { armor: 5, regen: 4 } },
-  { id: 'cascade_avalanche', name: '级联雪崩', tier: 'boss', minLv: 22, mech: { dodge: 0.2, split: true } },
-  { id: 'bit_rot', name: '位腐古神', tier: 'boss', minLv: 25, mech: { armor: 6, regen: 5 } },
+  { id: 'segfault_titan', name: '段错误泰坦', tier: 'boss', minLv: 15, mech: { armor: 4, split: true, thorns: 2 } },
+  { id: 'entropy_virus', name: '熵增病毒', tier: 'boss', minLv: 18, mech: { regen: 6, shield: 3, reShield: 2 } },
+  { id: 'legacy_colossus', name: '祖传代码巨像', tier: 'boss', minLv: 20, mech: { armor: 5, regen: 4, thorns: 3 } },
+  { id: 'cascade_avalanche', name: '级联雪崩', tier: 'boss', minLv: 22, mech: { dodge: 0.2, split: true, enrage: true } },
+  { id: 'bit_rot', name: '位腐古神', tier: 'boss', minLv: 25, mech: { armor: 6, regen: 5, enrage: true } },
   { id: 'debt_singularity', name: '技术债奇点', tier: 'boss', minLv: 28, mech: { armor: 4, shield: 4, regen: 6, split: true } },
 ]
 
@@ -123,6 +130,9 @@ function mechSummary(entry) {
   if (m.dodge) parts.push(MECH_LABEL.dodge + ' ' + Math.round(m.dodge * 100) + '%')
   if (m.regen) parts.push(MECH_LABEL.regen + ' ' + m.regen)
   if (m.split) parts.push(MECH_LABEL.split)
+  if (m.thorns) parts.push(MECH_LABEL.thorns + ' ' + m.thorns)
+  if (m.enrage) parts.push(MECH_LABEL.enrage)
+  if (m.reShield) parts.push(MECH_LABEL.reShield + ' ' + m.reShield)
   return parts.join(' · ')
 }
 

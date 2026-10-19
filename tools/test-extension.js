@@ -3,11 +3,20 @@
 // test-extension.js — 在 Node 里用 stub 跑一遍扩展的 activate()/tick()，提前暴露错误
 // 用法: node tools/test-extension.js
 
+const fs = require('fs')
+const os = require('os')
 const path = require('path')
 const Module = require('module')
 
 // 自检不得联网：激活阶段的上报一律跳过（与 CI 里的机器环境无关，只影响本进程）
 process.env.NIBBLE_NO_TELEMETRY = '1'
+
+// ⚠️ 存档隔离：自检会真的调用 attack() 并写盘，必须钉到临时目录，绝不碰真实进度。
+// 变量名以 plugins/nibble/hooks/nibble.js 的 dataDir() 为准：CODEBUDDY_PLUGIN_DATA（无第二个 D），
+// 兜底 CLAUDE_PLUGIN_DATA —— 写错名字时钩子会回落到 ~/.codebuddy/plugins/data/nibble（真实存档）。
+const TEST_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'nibble-test-'))
+process.env.CODEBUDDY_PLUGIN_DATA = TEST_DATA
+process.env.CLAUDE_PLUGIN_DATA = TEST_DATA
 
 const calls = { statusText: null, webviewHtml: null, registered: [], viewHtml: null }
 
@@ -133,9 +142,32 @@ setTimeout(() => {
       const okTel = r && r.sent === false
       console.log('   上报失败时静默返回: ' + JSON.stringify(r))
       console.log('   匿名 ID 已生成: ' + Boolean(context.globalState.get('nibble.anonId')))
+
+      // 5) 技能书原语指派（第五刀）：50 本必须全显式指派、原语合法、**同标签内不重复**。
+      //    加新书时若忘了填 SKILL_FORMS，这里会拦下来（否则它会悄悄回落成标签默认招式）。
+      console.log('5) 技能书原语指派 …')
+      const sk = require(path.join(__dirname, '..', 'plugins', 'nibble', 'hooks', 'skills.js'))
+      const formProblems = []
+      const perTag = {}
+      for (const book of sk.SKILLS) {
+        if (!sk.SKILL_FORMS[book.id]) formProblems.push(book.name + '(' + book.id + ') 未显式指派')
+        if (sk.FORM_PRIMITIVES.indexOf(book.form) < 0) formProblems.push(book.name + ' 原语非法: ' + book.form)
+        perTag[book.tag] = (perTag[book.tag] || []).concat([book.form])
+      }
+      let dupTag = 0
+      for (const tag of Object.keys(perTag)) {
+        const dup = perTag[tag].filter((f, i) => perTag[tag].indexOf(f) !== i)
+        if (dup.length) {
+          dupTag++
+          formProblems.push(sk.TAG_LABEL[tag] + ' 内重复原语: ' + Array.from(new Set(dup)).join('/'))
+        }
+      }
+      console.log('   50 本全显式指派: ' + (sk.SKILLS.every((b) => Boolean(sk.SKILL_FORMS[b.id])) ? 'true' : 'false'))
+      console.log('   同标签内不重复: ' + (dupTag === 0))
+      for (const p of formProblems) console.log('   ❌ ' + p)
       console.log('')
-      const ok = okView && okTel
-      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML 或匿名统计行为不正确')
+      const ok = okView && okTel && formProblems.length === 0
+      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 匿名统计 / 技能书原语指派 有不正确项')
       process.exit(ok ? 0 : 1)
     })
     .catch((err) => {
