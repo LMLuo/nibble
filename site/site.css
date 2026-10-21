@@ -348,6 +348,15 @@ h1 .hl { color: var(--core); text-shadow: 5px 5px 0 #0f3b39; }
 .abtns button:hover { border-color: var(--core); color: var(--core); }
 .abtns button:disabled { opacity: .55; cursor: default; border-color: var(--line); color: var(--dim); }
 
+/* —— 招式原语一览：12 个像素小牌（硬边 + 等宽，中文名 + 英文 id） —— */
+.moves { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.move {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 9px;
+  background: var(--panel); border: 2px solid var(--line); border-bottom-width: 4px;
+}
+.move b { font: 600 .82rem/1.4 var(--mono); color: var(--text); }
+.move i { font: 400 .7rem/1.4 var(--mono); font-style: normal; color: var(--dim); letter-spacing: .02em; }
+
 /* —— 技能书页：4 个上阵槽 + 详情卡里的换槽按钮 ——
    （进度条 / 图例 / 分组网格 / 格子复用上面那套 .abar/.alegend/.agroup/.agrid/.wcell） */
 .kslotsView { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }

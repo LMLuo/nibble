@@ -32,7 +32,7 @@
   本页不做数据收集：不引任何第三方脚本、不引外部字体，只有下方的 QR 图是本地文件。
 -->
 <link rel="stylesheet" href="site.css">
-<link rel="stylesheet" href="scene.css">
+<link rel="stylesheet" href="scene.css?v={{VERSION}}">
 </head>
 <body>
 
@@ -196,7 +196,7 @@
         </div>
         <div id="toast"><canvas id="toastIcon" width="24" height="24"></canvas><span id="toastText"></span></div>
       </div>
-      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，或切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴、切到「✦ 技能书」给拾玖配 4 本书——装配会真的改倍率与组合，下一次出手就按新配置抽。在 IDE 里，你每提一次问 = 自动攻击一次，连续提问还会点亮连击。</p>
+      <p class="demo-hint">上面这块<b>是真面板</b>（只是存档是假的）：点「攻击一次」，看顶部横幅写的是哪本书——画布上放的就是那本书的招式（落雷、法阵、层叠……）。也可以切到「📖 怪物库」翻 {{ENEMY_TOTAL}} 只 Bug 的图鉴、切到「✦ 技能书」给拾玖配 4 本书：装配会真的改倍率与组合，下一次出手就按新配置抽。在 IDE 里，你每提一次问 = 自动攻击一次，连续提问还会点亮连击。</p>
       <noscript><p class="demo-hint warn">这个演示需要 JavaScript；不开也能看到下面所有介绍。</p></noscript>
 
       <!-- 记忆点：把你今天遇到的 Bug 丢给它（在浏览器里现算，不上传、不联网） -->
@@ -248,7 +248,7 @@
         <article class="card">
           <span class="num">2</span>
           <h3>它出手</h3>
-          <p>小狗前冲、怪物掉血。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂，精英与头目还会尖刺反弹、狂暴、护盾再生；遭遇即自动收录进「📖 怪物库」。连续提问累积<b>连击</b>：≥10 连攻击最多 +30%、脚下亮起光环；≥25 连转亮金；≥50 连超载演出。断连静默归零，不惩罚。</p>
+          <p>小狗前冲、怪物掉血——但它不是"贴上去就扣血"：起手、生成招式、命中各占一拍，<b>命中那一拍才掉血</b>。每只怪物都有机制——闪避、护甲、护盾、自愈、分裂，精英与头目还会尖刺反弹、狂暴、护盾再生；遭遇即自动收录进「📖 怪物库」。连续提问累积<b>连击</b>：≥10 连攻击最多 +30%、脚下亮起光环；≥25 连转亮金；≥50 连超载演出。断连静默归零，不惩罚。</p>
         </article>
         <article class="card">
           <span class="num">3</span>
@@ -271,6 +271,11 @@
           <p>拾玖有血量（<code>30 + 等级 × 6</code>，<b>击杀即回满</b>），怪物没被打死就会反击。血量见底只是<b>被击退一场</b>：满血、换一只新怪，<b>不降级、不丢武器 / 技能书</b>，该场无经验无掉落。</p>
         </article>
       </div>
+
+      <h3 class="wall-title">每一击都有招式（{{MOVE_TOTAL}} 种原语）</h3>
+      <p class="fine">施放拆成相位：起手 → 生成 → 命中（有追击 / 反击再各加一拍），<b>命中那一拍才结算血条与击杀</b>——不会"血先掉、特效后到"。每本书按书名的意象各配一个原语，同一标签内也不重复，所以「专注瞄准」和「模式约束」不会演出同一套动作。</p>
+      <div class="moves">{{MOVE_CHIPS}}</div>
+
       <p class="fine">战斗数值全在本地算：<b>不调用任何模型 API、不多花你一分钱（零 token）</b>，存档写在 <code>~/.codebuddy/plugins/data/nibble/save.json</code>，跨会话、跨窗口都接着打。</p>
     </div>
   </section>
@@ -467,7 +472,7 @@
 
 <script src="demo-data.js"></script>
 <script src="site.js"></script>
-<script src="scene.js"></script>
-<script src="pet.js"></script>
+<script src="scene.js?v={{VERSION}}"></script>
+<script src="pet.js?v={{VERSION}}"></script>
 </body>
 </html>

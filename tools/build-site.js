@@ -107,6 +107,22 @@ const BUG_FALLBACK = [
 // 输入框下方的示例（点一下就填进去）——写的是大家都认得的"真 Bug 现场"
 const BUG_EXAMPLES = ['undefined is not a function', '偶现的竞态', '缓存不更新', '内存一直涨', '昨天还好好的']
 
+// 12 个招式原语的中文名：英文 id 以 skills.js 的 FORM_PRIMITIVES 为唯一真源，
+// 这里只补中文；新增原语却忘了写名字 → 构建直接报错，官网上不会悄悄少一招。
+const MOVE_LABEL = {
+  bolt: '落雷', thrust: '直刺', slash: '斩击', burst: '爆发', drip: '液滴', stamp: '印戳',
+  ward: '法阵', vortex: '漩涡', stack: '层叠', chars: '字块', boomerang: '回旋', hail: '骤雨',
+}
+function moveChips() {
+  const forms = require(path.join(ROOT, 'plugins', 'nibble', 'hooks', 'skills.js')).FORM_PRIMITIVES
+  const missing = forms.filter((f) => !MOVE_LABEL[f])
+  if (missing.length) throw new Error('招式原语缺中文名：' + missing.join(', ') + '（补在 tools/build-site.js 的 MOVE_LABEL）')
+  return {
+    total: forms.length,
+    chips: forms.map((f) => '<span class="move"><b>' + MOVE_LABEL[f] + '</b><i>' + f + '</i></span>').join(''),
+  }
+}
+
 function bugContent() {
   const ids = new Set(BUG_WORDS ? Object.keys(BUG_WORDS) : [])
   // 表里写了仓库不存在的 id 会在构建期直接报错（比线上默默失灵好）
@@ -352,6 +368,9 @@ function fill(tpl, data) {
     '{{ENEMY_WALL}}': wall,
     '{{BUG_QUOTES}}': quotes,
     '{{RARITY_TABLE}}': rarities,
+    // 12 个招式原语：英文 id 来自真源，中文名在 MOVE_LABEL（缺一个就构建失败，避免悄悄少一招）
+    '{{MOVE_CHIPS}}': moveChips().chips,
+    '{{MOVE_TOTAL}}': moveChips().total,
     '{{SKILL_TOTAL}}': m.skillTotal,
     '{{SKILL_TAGS}}': m.skillTags,
     '{{SKILL_COMBOS}}': m.skillCombos,
