@@ -14,6 +14,8 @@
   var cv = document.getElementById('scene')
   if (!stage || !cv) return // 旧面板 / 官网：没有场景节点，直接退出
   var ctx = cv.getContext('2d')
+  // 本脚本自己的 URL（带宿主加的 ?v=<version>）：currentScript 只在执行期有效，必须此刻抓下来
+  var SELF_SRC = (document.currentScript && document.currentScript.src) || ''
 
   // ============================================================
   // 三套场景 = 三个 tier（数据来自 state.enemyTier）
@@ -1708,6 +1710,11 @@
   window.addEventListener('message', function (e) { onMessage(e.data || {}) })
   // 调试句柄（对齐 pet.js 的 __nibbleDemo）：自动化核对施放管线用，只读
   window.__nibbleScene = {
+    // 本脚本从哪个版本加载的（扩展给资源加了 ?v=<version>）：用来区分"新版没生效"与"特效没画出来"
+    get build() {
+      var m = /[?&]v=([^&]+)/.exec(SELF_SRC)
+      return m ? decodeURIComponent(m[1]) : 'dev'
+    },
     get phase() { return castPhase },
     get hasFx() { return !!castFx },
     get hitDone() { return castHit },

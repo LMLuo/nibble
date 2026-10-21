@@ -463,6 +463,12 @@ function loadSave() {
       if (parsed.lastSkillDrop && typeof parsed.lastSkillDrop === 'object' && SKILL_INDEX[parsed.lastSkillDrop.id]) {
         s.lastSkillDrop = { id: parsed.lastSkillDrop.id, at: Number(parsed.lastSkillDrop.at) || 0 }
       }
+      // 技能出手（第五刀·表现）：hooks 进程写盘、扩展进程读盘，**必须原样还原**——
+      // 漏了这一条，扩展永远读到 lastCast=undefined，面板就再也没有施放特效（只有官网演示有）。
+      if (parsed.lastCast && typeof parsed.lastCast === 'object' &&
+        SKILL_INDEX[parsed.lastCast.id] && Number(parsed.lastCast.at) > 0) {
+        s.lastCast = parsed.lastCast
+      }
       // 连击（旧档没有 → 默认 0 连）；lastDmg 只用于面板飘字
       const st = parsed.streak
       if (st && typeof st === 'object') {

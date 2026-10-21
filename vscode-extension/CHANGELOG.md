@@ -1,7 +1,17 @@
 # 更新日志（CHANGELOG）
 
 > 更早版本（`0.1.0` / `0.1.1`）的说明见 GitHub Releases：<https://github.com/LMLuo/nibble/releases>
-> 发下一版时：在 `## 0.6.0` 上方新增一节「## 未发布」写改动，发版时再改成实际版本号（`vsce` 会把本文件展示在扩展详情页）。
+> 发下一版时：在 `## 0.6.1` 上方新增一节「## 未发布」写改动，发版时再改成实际版本号（`vsce` 会把本文件展示在扩展详情页）。
+
+## 0.6.1
+
+### 修复：插件里没有攻击特效（面板收不到施放消息）
+
+- **根因**：hooks 进程把「这一击用了哪本书」写进存档的 `lastCast`，但扩展是另一个进程、通过 `loadSave()` 的**逐字段白名单**读盘，`lastCast` 不在名单里 → 扩展永远读到 `undefined` → `type:'cast'` 从不推送。数值、日志、掉落、技能书页全都正常，唯独面板没有施放特效（官网演示自己造 cast，所以演示里反而有）
+- **修复**：`loadSave()` 还原 `lastCast`（校验 `id` 属于技能库、`at > 0`），面板重新拿到拆相位所需的 `form / tier / frames / impactAt / killedEnemy / hpBefore…`
+- **加固**：webview 的三个资源 URL 带 `?v=<version>`，换版本后不会再被 `file://` 旧缓存骗成"装了新版、跑的是旧脚本"
+- **可诊断**：`scene.js` 暴露 `window.__nibbleScene.build`（从自身 `src` 读版本），一行命令即可区分"新代码没加载"与"没画出来"
+- **自检**：`npm test` 新增第 6 项——`lastCast` 写盘后必须能读回，防止同类跨进程字段再被漏掉
 
 ## 0.6.0
 

@@ -165,9 +165,25 @@ setTimeout(() => {
       console.log('   50 本全显式指派: ' + (sk.SKILLS.every((b) => Boolean(sk.SKILL_FORMS[b.id])) ? 'true' : 'false'))
       console.log('   同标签内不重复: ' + (dupTag === 0))
       for (const p of formProblems) console.log('   ❌ ' + p)
+
+      // 6) lastCast 跨进程还原：hooks 写盘 → 扩展读盘 → 推 type:'cast'。
+      //    漏了 loadSave() 里的还原，面板会永远没有施放特效（只有官网演示有），而数值全都正常。
+      console.log('6) lastCast 跨进程还原 …')
+      const s6 = sp.loadSave()
+      s6.lastCast = {
+        id: 'print_debug', name: '打印大法', rarity: 'common', tag: 'aim', tier: 1,
+        slot: 0, form: 'chars', enemyType: 'race_condition', enemyRarity: 'common',
+        power: 1, combos: [], hpBefore: 10, maxHpBefore: 20, playerHpBefore: 30,
+        killed: false, countered: false, at: Date.now(), dmg: 12,
+      }
+      sp.saveSave()
+      const back = sp.reloadSave()
+      const okCast = Boolean(back.lastCast && back.lastCast.id === 'print_debug' && back.lastCast.form === 'chars')
+      console.log('   写盘后能读回: ' + okCast)
+      if (!okCast) console.log('   ❌ lastCast 在 loadSave() 里被丢了：面板收不到施放消息')
       console.log('')
-      const ok = okView && okTel && formProblems.length === 0
-      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 匿名统计 / 技能书原语指派 有不正确项')
+      const ok = okView && okTel && formProblems.length === 0 && okCast
+      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 匿名统计 / 技能书原语指派 / lastCast 还原 有不正确项')
       process.exit(ok ? 0 : 1)
     })
     .catch((err) => {

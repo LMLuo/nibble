@@ -395,10 +395,13 @@ function tick() {
 }
 
 function buildHtml(webview, inView) {
-  const petJs = webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'pet.js')))
+  // 资源 URL 带版本号：webview 对 file:// 有磁盘缓存，换版本后旧脚本可能继续跑
+  // （0.6.0 装机后"没攻击特效"就是这一类，加 ?v= 让每次换版强制重新拉取）
+  const v = '?v=' + encodeURIComponent(require('./package.json').version)
+  const petJs = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'pet.js')))) + v
   // 战斗场景是独立模块（scene.css / scene.js）：官网不加载它们，所以官网面板保持原样
-  const sceneCss = webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.css')))
-  const sceneJs = webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.js')))
+  const sceneCss = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.css')))) + v
+  const sceneJs = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.js')))) + v
   let html = fs.readFileSync(path.join(MEDIA(), 'panel.html'), 'utf8')
   html = html.replace('<!--PET_JS-->', '<script src="' + petJs + '"></script>')
   html = html.replace('<!--SCENE_CSS-->', '<link rel="stylesheet" href="' + sceneCss + '">')
