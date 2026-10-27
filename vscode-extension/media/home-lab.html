@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Nibble · 小屋样张</title>
+<link rel="stylesheet" href="home.css">
+<style>
+  /* 样张页自带最小外壳：不依赖 panel.html 的内联变量，单独双击也能打开 */
+  @font-face {
+    font-family: 'NibblePixel';
+    src: url('fonts/nibble-pixel.woff2') format('woff2');
+    font-display: swap;
+  }
+  :root {
+    --bg: #171210;
+    --panel: #211a15;
+    --line: #3f3026;
+    --core: #d8c08a;
+    --hearth: #FFB86B;
+    --pulse: #FF6B6B;
+    --text: #efe3d2;
+    --dim: #9a8b78;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  #homeView { height: 100%; padding-top: 12px; }
+  .labNote {
+    position: fixed;
+    left: 10px;
+    bottom: 6px;
+    color: var(--dim);
+    font-size: 12px;
+    z-index: 5;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<!-- 与 panel.html 里的小屋视图结构完全一致：home-view.js 靠这些 id 找节点 -->
+<div id="homeView">
+  <aside class="homeSide homeLeft" id="homeSets"></aside>
+  <div class="homeStage" id="homeStage">
+    <canvas id="homeCanvas"></canvas>
+    <div class="homeHint" id="homeHint">按住家具拖动摆放 · 拖空白处平移 · 滚轮切换 1x/2x/3x</div>
+  </div>
+  <aside class="homeSide homeRight" id="homeMounts"></aside>
+  <div class="homeBar">
+    <button id="homeZoomOut" title="缩小">−</button>
+    <span id="homeZoomLabel">2x</span>
+    <button id="homeZoomIn" title="放大">+</button>
+    <button id="homeReset">重排</button>
+    <span id="homeBackend"></span>
+  </div>
+</div>
+
+<script src="furniture-pixels.js"></script>
+<script src="home-data.js"></script>
+<script src="home-scene.js"></script>
+<script src="home-atlas.js"></script>
+<script src="home-gl.js"></script>
+<script src="home-2d.js"></script>
+<script src="home-view.js"></script>
+<script>
+  NibbleHome.mount()
+</script>
+</body>
+</html>

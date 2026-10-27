@@ -31,6 +31,7 @@ site/fonts/src/
 legacy-mods/assets/weapons/cells/
 legacy-mods/assets/monsters/cells/
 legacy-mods/assets/skills/cells/
+legacy-mods/assets/furniture/cells/
 
 # 像素校验用的放大预览图，由 png2grid.mjs / weapons-sprites.mjs 重新生成
 legacy-mods/preview/

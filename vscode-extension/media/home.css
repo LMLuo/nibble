@@ -1,0 +1,719 @@
+/* home.css — 小屋视图
+   皮肤口径与战斗页同源：0 圆角、2px 暖色硬边、像素字体、暖木底色。
+   像素字体字号必须锁 12 的整数倍，非整数倍会字形发虚（与 panel.html 同一条规矩）。 */
+
+/* .hidden 原本只定义在 panel.html 的内联样式里，home-lab.html 是独立页面拿不到，
+   导致默认带 hidden 的仓库面板（98% 不透明）一直盖在小屋上，整页看起来「发黑」。
+   小屋自己的显隐完全依赖这个类，所以必须在 home.css 里自带一份。 */
+.hidden {
+  display: none !important;
+}
+
+#homeView {
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  /* 顶部 38px 给全局悬浮菜单让位（与 #arsenalView 一致） */
+  padding: 38px 10px 10px;
+  display: grid;
+  /* 墙面陈列（右栏）取消后布局收成两栏，舞台多出 150px 宽 */
+  grid-template-columns: 142px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 34px;
+  gap: 8px;
+  font-family: 'NibblePixel', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* —— 舞台 —— */
+.homeStage {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* 背景由 home-view 的 paintStageBackdrop() 换成程序化夜空（320×200 放大铺满），
+     这里保留深色兜底；pixelated 让它保持像素颗粒而不是被插值糊成一片 */
+  background-color: #120d0b;
+  image-rendering: pixelated;
+  /* 内阴影压暗四缘，把注意力收到房间上 */
+  box-shadow: inset 0 0 60px 8px rgba(0, 0, 0, 0.55);
+  background:
+    radial-gradient(120% 80% at 50% 8%, rgba(226, 160, 96, 0.09), rgba(0, 0, 0, 0) 70%),
+    #120d0b;
+}
+
+#homeCanvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+
+.homeHint {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 14px;
+  pointer-events: none;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* —— 侧栏 —— */
+.homeSide {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.homeLeft {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* 墙面陈列（右栏）已取消：武器/怪物不再上墙。DOM 保留但整体隐藏，
+   恢复时把这条 display:none 去掉、grid 列改回三栏即可。 */
+.homeRight {
+  display: none;
+}
+
+/* 套装行：稀有度色点 + 名字 + 稀有度字，当前套装左侧一条暖色竖条 */
+.homeSet {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 4px 6px 4px 9px;
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.homeSet:hover {
+  border-color: #8a5a2a;
+}
+
+.homeSet.on {
+  border-color: var(--hearth);
+  background: #1e1511;
+}
+
+.homeSet.on::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  background: var(--hearth);
+}
+
+.homeSetDot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  display: block;
+}
+
+.homeSetName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.homeSetRar {
+  flex: 0 0 auto;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+/* 未解锁的套装：仍可点开预览（让玩家看见目标），但整体压暗、不抢注意力 */
+.homeSet.locked {
+  opacity: 0.55;
+}
+
+.homeSet.locked .homeSetName {
+  color: var(--dim);
+}
+
+/* 挂点栏 */
+.homeMountHead {
+  color: var(--dim);
+  padding: 0 2px 2px;
+}
+
+.homeMountCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: #100c0a;
+  border: 2px dashed #2e231c;
+  color: #4a5265;
+}
+
+.homeMountTag {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+
+.homeMountVal {
+  flex: 1 1 auto;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 底栏 —— */
+.homeBar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 加了「仓库 / 撤销」之后底栏容易挤到换行，压成单行、超出的裁掉 */
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.homeBar button {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 12px;
+  color: #ecdfcc;
+  background: #2a1a12;
+  border: 2px solid #4a2a18;
+  border-bottom-width: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.homeBar button:hover {
+  border-color: #8a5a2a;
+}
+
+.homeBar button:active {
+  border-bottom-width: 2px;
+  transform: translateY(2px);
+}
+
+#homeZoomLabel {
+  min-width: 32px;
+  text-align: center;
+  color: var(--core);
+}
+
+#homeBackend {
+  margin-left: auto;
+  color: var(--dim);
+}
+
+/* 窄容器（停靠在底部面板时）：侧栏让位给舞台，套装改用底部条 */
+@media (max-width: 620px) {
+  #homeView {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto 34px;
+    padding-top: 34px;
+  }
+
+  .homeStage {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .homeLeft {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .homeLeft .homeSet {
+    width: auto;
+  }
+
+  .homeRight {
+    display: none;
+  }
+
+  .homeBar {
+    grid-column: 1;
+    grid-row: 3;
+  }
+}
+
+/* —— 侧栏：当前搭配（8 个槽位摘要）—— */
+.homeSideHead {
+  color: var(--dim);
+  padding: 0 2px 2px;
+}
+
+.homeSkinRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 3px 6px;
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  border-left-width: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.homeSkinRow:hover {
+  border-color: #8a5a2a;
+  border-left-width: 4px;
+}
+
+.homeSkinSlot {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+
+.homeSkinName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* —— 仓库：整套快捷 —— */
+.homeQuickRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: 6px;
+}
+
+.homeQuickLabel {
+  color: var(--dim);
+  margin-right: 2px;
+}
+
+.homeQuickBtn {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 12px;
+  color: var(--text);
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.homeQuickBtn:disabled {
+  color: var(--dim);
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* —— 仓库：槽位分组（抽屉窄，标题在上、选项在下换行）—— */
+.homeDepotGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px 0;
+  border-bottom: 1px solid #241a14;
+}
+
+.homeDepotGroupTitle {
+  color: var(--dim);
+}
+
+.homeDepotOpts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.homeDepotOpt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 56px;
+  min-height: 58px;
+  padding: 3px;
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  cursor: pointer;
+}
+
+.homeDepotOpt:hover {
+  border-color: #8a5a2a;
+}
+
+.homeDepotOpt.on {
+  background: #1e1511;
+}
+
+.homeDepotOpt.locked {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.homeDepotOpt.locked:hover {
+  border-color: #2e231c;
+}
+
+.homeDepotOpt canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.homeDepotOptTag {
+  font-size: 12px;
+  line-height: 12px;
+  font-family: inherit;
+}
+
+.homeWardCard {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  background: #100c0a;
+  border: 2px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.homeWardLock {
+  flex: 1 0 100%;
+  font-style: normal;
+  font-size: 12px;
+  line-height: 14px;
+  color: var(--dim);
+}
+
+.homeWardBtn {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 12px;
+  color: #ecdfcc;
+  background: #2a1a12;
+  border: 2px solid #4a2a18;
+  border-bottom-width: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.homeWardBtn:hover {
+  border-color: #8a5a2a;
+}
+
+.homeWardBtn:active {
+  border-bottom-width: 2px;
+  transform: translateY(2px);
+}
+
+.homeWardCount {
+  color: var(--dim);
+  padding: 0 2px;
+}
+
+/* 左栏的装饰计数：可点入口，点开仓库装饰页 */
+button.homeWardCountBtn {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  background: none;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+button.homeWardCountBtn:hover {
+  border-color: #4a3a2a;
+  color: var(--text);
+}
+
+/* —— 槽位就地快换浮层 —— */
+.homeQuickPick {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(16, 12, 10, 0.97);
+  border: 2px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+}
+
+.homeQuickOpt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 52px;
+  padding: 3px;
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 12px;
+  cursor: pointer;
+}
+
+.homeQuickOpt:hover {
+  border-color: #8a5a2a;
+  color: var(--text);
+}
+
+.homeQuickOpt.on {
+  background: #1e1511;
+  color: var(--text);
+}
+
+.homeQuickOpt.locked {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.homeQuickOpt.locked:hover {
+  border-color: #2e231c;
+}
+
+.homeQuickOpt canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* —— 仓库（右侧抽屉）——
+   以前是全屏覆盖，装饰时完全看不见屋子。改成只占右侧一条，
+   同时 home-view 的 autoFit 会把房间往左让半屏，保证「边看边摆」。
+   宽度 336 必须与 home-data.js 的 DEPOT_W 一致。 */
+.homeDepot {
+  position: absolute;
+  /* 40 = 悬浮导航高度（36）+ 4，否则抽屉会压住导航条 */
+  top: 40px;
+  right: 8px;
+  bottom: 42px;
+  width: 336px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: rgba(16, 12, 10, 0.96);
+  border: 2px solid var(--line);
+  box-shadow: -16px 0 44px rgba(0, 0, 0, 0.72);
+}
+
+.homeDepotBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 2px solid var(--line);
+}
+
+.homeDepotTab {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 12px;
+  color: var(--dim);
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.homeDepotTab.on {
+  color: var(--text);
+  border-color: var(--hearth);
+  background: #1e1511;
+}
+
+.homeDepotClose {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 12px;
+  color: var(--dim);
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  cursor: pointer;
+}
+
+.homeDepotClose:hover {
+  color: var(--text);
+  border-color: #8a5a2a;
+}
+
+.homeDepotBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.homeDepotHint {
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+
+.homeDepotHint.warn {
+  color: var(--pulse);
+}
+
+.homeDepotSet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.homeDepotSet:hover {
+  border-color: #8a5a2a;
+}
+
+.homeDepotSet.on {
+  border-color: var(--hearth);
+  background: #1e1511;
+}
+
+.homeDepotSet.locked {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.homeDepotSet.locked:hover {
+  border-color: #2e231c;
+}
+
+.homeExtraGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.homeExtraCell {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 42px;
+  padding: 2px;
+  background: #100c0a;
+  border: 2px solid #2e231c;
+  cursor: pointer;
+}
+
+.homeExtraCell:hover {
+  border-color: #8a5a2a;
+}
+
+.homeExtraCell.on {
+  border-color: var(--hearth);
+  background: #1e1511;
+}
+
+/* 已经「拿起」、等在屋里落地的那一件。
+   没有这个高亮，点完装饰后抽屉里毫无变化，玩家会以为按钮没反应。 */
+.homeExtraCell.picking {
+  border-color: var(--pulse);
+  background: #2a1d12;
+  animation: homePickPulse 1.1s steps(2, end) infinite;
+}
+
+@keyframes homePickPulse {
+  0% {
+    border-color: var(--pulse);
+  }
+
+  50% {
+    border-color: #6a4a2a;
+  }
+
+  100% {
+    border-color: var(--pulse);
+  }
+}
+
+/* 舞台顶部的放置提示条 */
+.homePlacingTip {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  z-index: 25;
+  padding: 4px 12px;
+  background: rgba(16, 12, 10, 0.92);
+  border: 2px solid var(--hearth);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 14px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.homePlacingTip.bad {
+  border-color: #b0402c;
+  color: #f0b0a0;
+}
+
+.homeExtraCell canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* 窄屏下仓库仍固定在右侧（宽度不变）—— 之前这里让它铺满全屏，
+   结果中等宽度的窗口一打开仓库整个画面被盖住，「边看边摆」就失效了。
+   房间由 autoFit 的 reserved 让位逻辑自动缩小，抽屉本身不再抢空间。 */
+@media (max-width: 900px) {
+  .homeExtraGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

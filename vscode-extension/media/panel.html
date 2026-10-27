@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Nibble</title>
 <!--SCENE_CSS-->
+<!--HOME_CSS-->
 <style>
   /* 调色板换暖色系（原是冷色 #0D0F14 底 + #4ECDC4 青绿强调）。
      战斗页的颜色在 scene.css 里自成一套，这里管的是武器库/怪物库、按钮与页面底色。 */
@@ -140,6 +141,7 @@
     <button class="navItem" id="tabArsenal">武器库 <b id="navWpn"></b></button>
     <button class="navItem" id="tabBestiary">怪物库 <b id="navEnemy"></b></button>
     <button class="navItem" id="tabSkill">技能书 <b id="navSkill"></b></button>
+    <button class="navItem" id="tabHome">小屋</button>
   </div>
 </nav>
 
@@ -247,6 +249,25 @@
   </div>
   <div id="kgroups"></div>
 </div>
+<!-- 小屋（家园）：等距房间 + 家具拖动摆放。脚本必须在 pet.js 之前加载 ——
+     pet.js 切到 home 视图时会直接调 NibbleHome.mount()。 -->
+<div id="homeView" class="hidden">
+  <aside class="homeSide homeLeft" id="homeSets"></aside>
+  <div class="homeStage" id="homeStage">
+    <canvas id="homeCanvas"></canvas>
+    <div class="homeHint" id="homeHint">按住家具拖动摆放 · 拖空白处平移 · 滚轮切换 1x/2x/3x</div>
+  </div>
+  <aside class="homeSide homeRight" id="homeMounts"></aside>
+  <div class="homeBar">
+    <button id="homeZoomOut" title="缩小">−</button>
+    <span id="homeZoomLabel">2x</span>
+    <button id="homeZoomIn" title="放大">+</button>
+    <button id="homeReset">重排</button>
+    <span id="homeBackend"></span>
+  </div>
+</div>
+
+<!--HOME_JS-->
 <!--PET_JS-->
 <!--SCENE_JS-->
 </body>

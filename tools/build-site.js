@@ -29,6 +29,15 @@ const COPIES = [
   'pet.js', // 面板渲染器：官网首屏演示跑的就是它
   'scene.js', // 战斗场景渲染（官网演示面板已升级为场景化战斗页）
   'scene.css', // 场景与连击样式（同上）
+  // 小屋（家园）全家桶：注入顺序必须是 pixels → data → scene → atlas → gl → 2d → view
+  'furniture-pixels.js',
+  'home-data.js',
+  'home-scene.js',
+  'home-atlas.js',
+  'home-gl.js',
+  'home-2d.js',
+  'home-view.js',
+  'home.css',
   'panel-preview.png', // 战斗面板截图
   'bestiary-preview.png', // 怪物库截图
   'player-pixel.png', // 拾玖的 24x24 像素图

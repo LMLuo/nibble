@@ -243,6 +243,9 @@ function freshSave() {
     streak: { count: 0, lastAt: 0 }, lastDmg: 0,
     // 风险层（第三刀）：玩家血量只在攻击/反击时变化；playerHp 缺省 = 满血
     playerHp: null, playerGuard: null, knockbackAt: 0,
+    // 小屋（家园）：装潢套装 + 家具摆放。null = 用前端默认摆法。
+    // ⚠️ 只能加可选字段，**绝不能升 v 版本号** —— loadSave 是 `v === 1` 硬门，改版本会清空所有玩家存档。
+    home: null,
   }
 }
 
@@ -277,6 +280,208 @@ function parseSkills(a) {
 function ensureSkills(s) {
   if (!s.skills) s.skills = parseSkills(null)
   return s.skills
+}
+
+// 小屋（家园）：槽位 id 与房间尺寸必须和 media/home-data.js 保持一致。
+// 后端不认识家具尺寸，只做「已知槽位 + 落在房间内 + 每个槽位最多一条」这三道校验，
+// 真正的重叠判定留在前端 canPlace（它才知道 2×2 / 3×2 这些占地）。
+// 房间里的 6 个家具位（布局用）
+const HOME_SLOT_IDS = ['bed', 'desk', 'chair', 'lamp', 'rug', 'deco']
+// 20 件通用装饰的 id，必须与 media/home-data.js 的 EXTRAS 一致。
+const HOME_EXTRA_IDS = [
+  'plant', 'books', 'mug', 'globe', 'boxes', 'floorlamp', 'guitar', 'tank', 'catbed', 'coffee',
+  'shelf', 'sofa', 'cabinet', 'screen', 'turntable', 'foldingtable',
+  'wardrobe', 'bigshelf', 'beanbag', 'cattree',
+]
+const HOME_EXTRA_MAX = 16
+const HOME_PIECE_IDS = HOME_SLOT_IDS.concat(HOME_EXTRA_IDS)
+const HOME_COLS = 10
+const HOME_ROWS = 8
+
+// —— 物品化模型（2026-10-27 重构）——
+// 小屋不是「整屋切换 5 套」，而是 8 个搭配槽位逐件挑。
+// 物品 id 形如 'wood_bed' / 'star_floor'：系列 × 槽位。稀有度跟随系列。
+const HOME_SKIN_SLOTS = ['floor', 'wall', 'bed', 'desk', 'chair', 'lamp', 'rug', 'deco']
+const HOME_SERIES = [
+  { id: 'wood', name: '暖木', rarity: 'common' },
+  { id: 'study', name: '旧书房', rarity: 'rare' },
+  { id: 'moss', name: '苔石', rarity: 'rare' },
+  { id: 'neon', name: '霓虹', rarity: 'epic' },
+  { id: 'star', name: '星海', rarity: 'legendary' },
+]
+const HOME_SLOT_NAME = {
+  floor: '地板', wall: '墙纸', bed: '床铺', desk: '桌子',
+  chair: '椅子', lamp: '灯', rug: '地毯', deco: '摆件',
+}
+const HOME_EXTRA_NAME = {
+  plant: '绿植盆栽', books: '一摞书', mug: '马克杯', globe: '地球仪', boxes: '纸箱堆',
+  floorlamp: '落地灯', guitar: '木吉他', tank: '小鱼缸', catbed: '猫窝', coffee: '咖啡机',
+  shelf: '书架', sofa: '双人沙发', cabinet: '矮柜', screen: '屏风', turntable: '唱片机柜',
+  foldingtable: '折叠桌', wardrobe: '大衣柜', bigshelf: '靠墙大书架', beanbag: '懒人沙发', cattree: '猫爬架',
+}
+// 槽位物品 id 全集（40 件）+ 装饰（20 件）
+const HOME_SKIN_ITEM_IDS = []
+for (const s of HOME_SERIES) for (const slot of HOME_SKIN_SLOTS) HOME_SKIN_ITEM_IDS.push(s.id + '_' + slot)
+const HOME_ITEM_IDS = HOME_SKIN_ITEM_IDS.concat(HOME_EXTRA_IDS)
+const HOME_ITEM_SET = new Set(HOME_ITEM_IDS)
+const HOME_ITEM_RARITY = {}
+for (const s of HOME_SERIES) {
+  for (const slot of HOME_SKIN_SLOTS) HOME_ITEM_RARITY[s.id + '_' + slot] = s.rarity
+}
+for (const id of HOME_EXTRA_IDS) {
+  // 与 home-data.js 的 EXTRAS 稀有度保持一致
+  const rare = ['guitar', 'tank', 'catbed', 'coffee', 'sofa', 'cabinet', 'turntable', 'foldingtable']
+  if (rare.indexOf(id) >= 0) HOME_ITEM_RARITY[id] = 'rare'
+  else if (id === 'cattree') HOME_ITEM_RARITY[id] = 'legendary'
+  else if (['shelf', 'screen', 'wardrobe', 'bigshelf', 'beanbag'].indexOf(id) >= 0) HOME_ITEM_RARITY[id] = 'epic'
+  else HOME_ITEM_RARITY[id] = 'common'
+}
+const HOME_RARITY_WEIGHT = { common: 5, rare: 3, epic: 2, legendary: 1 }
+
+// 开局：整套暖木（8 件）+ 6 件普通装饰
+function freshHomeOwned() {
+  const out = {}
+  for (const slot of HOME_SKIN_SLOTS) out['wood_' + slot] = true
+  for (const id of HOME_EXTRA_IDS) if (HOME_ITEM_RARITY[id] === 'common') out[id] = true
+  return out
+}
+function freshHomeSkins() {
+  const out = {}
+  for (const slot of HOME_SKIN_SLOTS) out[slot] = 'wood_' + slot
+  return out
+}
+// 物品 id → 中文名（日志用）
+function homeItemName(id) {
+  if (HOME_EXTRA_NAME[id]) return HOME_EXTRA_NAME[id]
+  const i = id.indexOf('_')
+  const sid = id.slice(0, i)
+  const slot = id.slice(i + 1)
+  const s = HOME_SERIES.find((x) => x.id === sid)
+  return (s ? s.name : sid) + '·' + (HOME_SLOT_NAME[slot] || slot)
+}
+// 保底/掉落概率
+const HOME_DROP_RATE = 0.02
+const HOME_PITY_LIMIT = 40
+
+function parseHome(h) {
+  const out = { skins: freshHomeSkins(), layout: [], owned: freshHomeOwned(), pity: 0 }
+  if (!h || typeof h !== 'object') return out
+
+  // skins：每个槽位只认自己那 5 个物品（'wood_bed' 只能进 bed 位）
+  if (h.skins && typeof h.skins === 'object') {
+    for (const slot of HOME_SKIN_SLOTS) {
+      const id = String(h.skins[slot] || '')
+      if (!HOME_ITEM_SET.has(id)) continue
+      if (id.slice(id.lastIndexOf('_') + 1) !== slot) continue
+      out.skins[slot] = id
+    }
+  }
+
+  // owned：只接受已知物品 id
+  if (h.owned && typeof h.owned === 'object') {
+    for (const k of Object.keys(h.owned)) {
+      if (h.owned[k] && HOME_ITEM_SET.has(k)) out.owned[k] = true
+    }
+  }
+  // 开局那批永远视为拥有，避免异常档变成空手
+  const base = freshHomeOwned()
+  for (const k of Object.keys(base)) out.owned[k] = true
+
+  if (Array.isArray(h.layout)) {
+    const seen = {}
+    let extras = 0
+    for (const it of h.layout) {
+      if (!it || typeof it !== 'object') continue
+      // key 是新结构；slot 是旧档（6 件套内家具时期）
+      const key = String(it.key || it.slot || '')
+      if (HOME_PIECE_IDS.indexOf(key) < 0 || seen[key]) continue
+      const isExtra = HOME_EXTRA_IDS.indexOf(key) >= 0
+      if (isExtra && extras >= HOME_EXTRA_MAX) continue
+      const gx = Math.round(Number(it.gx))
+      const gy = Math.round(Number(it.gy))
+      if (!isFinite(gx) || !isFinite(gy)) continue
+      if (gx < 0 || gx >= HOME_COLS || gy < 0 || gy >= HOME_ROWS) continue
+      seen[key] = true
+      if (isExtra) extras++
+      out.layout.push({ key, gx, gy })
+    }
+  }
+
+  out.pity = Math.max(0, Number(h.pity) || 0)
+  return out
+}
+
+// 保存小屋。走 reloadSave 是必须的：hooks 与扩展是两个进程，
+// 直接用内存缓存会覆盖掉另一侧刚写进去的进度（等级/掉落在同一份 save.json 里）。
+//
+// ⚠️ 只能覆盖 skins / layout。前端提交的 home 不带 owned / pity，
+// 整体替换会把收集进度清零。
+function saveHome(h) {
+  reloadSave()
+  const prev = save.home && typeof save.home === 'object' ? parseHome(save.home) : parseHome(null)
+  const next = parseHome(h)
+  prev.skins = next.skins
+  prev.layout = next.layout
+  if (!prev.owned || typeof prev.owned !== 'object') prev.owned = next.owned
+  save.home = prev
+  saveSave()
+  return save.home
+}
+
+// 懒初始化：老档 / 只存过布局的档都没有 owned，这里补齐种子
+function ensureHome(s) {
+  if (!s.home || typeof s.home !== 'object') s.home = parseHome(null)
+  if (!s.home.owned || typeof s.home.owned !== 'object') s.home.owned = {}
+  const base = freshHomeOwned()
+  for (const k of Object.keys(base)) s.home.owned[k] = true
+  if (!s.home.skins || typeof s.home.skins !== 'object') s.home.skins = freshHomeSkins()
+  if (typeof s.home.pity !== 'number' || s.home.pity < 0) s.home.pity = 0
+  if (!Array.isArray(s.home.layout)) s.home.layout = []
+  return s.home
+}
+
+// 调试用：把全部 60 件家具标记为已拥有（不动等级/武器/图鉴等其它进度）。
+// 只在本地开发想看全貌时用，命令面板里有入口；正式玩法仍然靠掉落。
+function unlockAllHome() {
+  const s = reloadSave()
+  const home = ensureHome(s)
+  for (const id of HOME_ITEM_IDS) home.owned[id] = true
+  saveSave()
+  return Object.keys(home.owned).length
+}
+
+// 反向：把家具进度恢复成开局那 14 件（暖木 8 + 普通装饰 6），搭配回到整套暖木
+function resetHomeOwned() {
+  const s = reloadSave()
+  const home = ensureHome(s)
+  home.owned = freshHomeOwned()
+  home.skins = freshHomeSkins()
+  home.pity = 0
+  saveSave()
+  return Object.keys(home.owned).length
+}
+
+// 家具掉落的独立保底池。单件掉落（40 件槽位物品 + 20 件装饰）：
+//   - 只从未拥有的物品里抽，稀有度决定权重
+//   - 未出件才累加 pity，出件即清零；集齐后不再产出
+function rollFurniture(pity, owned) {
+  const cur = Math.max(0, Number(pity) || 0)
+  const has = owned && typeof owned === 'object' ? owned : {}
+  const pool = HOME_ITEM_IDS.filter((id) => !has[id])
+  if (!pool.length) return { item: null, pity: 0, done: true }
+  const next = cur + 1
+  if (next >= HOME_PITY_LIMIT) {
+    return { item: pool[Math.floor(Math.random() * pool.length)], pity: 0, done: false }
+  }
+  if (Math.random() >= HOME_DROP_RATE) return { item: null, pity: next, done: false }
+  let total = 0
+  for (const id of pool) total += HOME_RARITY_WEIGHT[HOME_ITEM_RARITY[id]] || 1
+  let r = Math.random() * total
+  for (const id of pool) {
+    r -= HOME_RARITY_WEIGHT[HOME_ITEM_RARITY[id]] || 1
+    if (r <= 0) return { item: id, pity: 0, done: false }
+  }
+  return { item: pool[0], pity: 0, done: false }
 }
 
 // 解析怪物库存档：只接受已知怪物 id（未知 id 静默丢弃，向前兼容加/删怪物）
@@ -481,6 +686,9 @@ function loadSave() {
       if (parsed.equipped && WEAPON_INDEX[parsed.equipped] && s.arsenal.owned[parsed.equipped]) {
         s.equipped = parsed.equipped
       }
+      // 小屋（家园）：旧档没有 home 字段时也会得到一个「木套已解锁、空布局」的种子，
+      // 前端拿到 null 会走默认摆法，但收集进度需要这份种子才能自洽。
+      s.home = parseHome(parsed.home)
       save = s
     }
   } catch { /* 无存档或损坏 → 全新开始 */ }
@@ -846,6 +1054,15 @@ function attack(s) {
     log += `　📖 获得 ${RARITY_LABEL[sdrop.skill.rarity]}·${sdrop.skill.name}！`
     if (firstBook) log += '　（首次获得技能书：去「技能书」页装配最多 4 本，出手时随机施放）'
   }
+  // 家具（第三池）：2% 掷 / 保底 40 只。独立 pity、只出未拥有的整套，
+  // 不弹第二条 toast（同一时刻已经有武器横幅了），只在战斗日志里记一行。
+  const home = ensureHome(s)
+  const fdrop = rollFurniture(home.pity, home.owned)
+  home.pity = fdrop.pity
+  if (fdrop.item) {
+    home.owned[fdrop.item] = true
+    log += `　🛋 获得家具「${homeItemName(fdrop.item)}」！`
+  }
   spawnEnemy(s)
   const next = enemyInfo(s.enemy.type)
   log += `　新的野生 ${next.name}（${next.tierLabel}·${RARITY_LABEL[s.enemy.rarity]}）出现`
@@ -1139,6 +1356,10 @@ module.exports = {
   // 供 IDE 扩展复用（把 24x24 网格交给 Webview 真彩绘制）
   decodeGrid, shiftGrid, enemyGrid, miniGrid, renderShaded, RARITY_COLOR,
   ENEMY_NAMES, RARITY_LABEL,
+  // 小屋（家园）：逐槽位搭配 + 家具摆放 + 单件掉落池
+  saveHome, parseHome, ensureHome, rollFurniture, homeItemName, unlockAllHome, resetHomeOwned,
+  HOME_SLOT_IDS, HOME_EXTRA_IDS, HOME_EXTRA_MAX, HOME_SKIN_SLOTS, HOME_SERIES,
+  HOME_ITEM_IDS, HOME_ITEM_RARITY, HOME_DROP_RATE, HOME_PITY_LIMIT,
   // 武器库（纯收集）：数据 + 掉落 + 素材
   WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid,
   WEAPON_POWER, bestOwnedWeapon,

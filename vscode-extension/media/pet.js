@@ -172,23 +172,33 @@
     render()
   }
 
-  // —— 视图切换：战斗 / 武器库 / 怪物库 / 技能书 ——
+  // —— 视图切换：战斗 / 武器库 / 怪物库 / 技能书 / 小屋 ——
+  // 官网复用同一份 pet.js，但 DOM 里没有小屋节点，所以 home 相关一律判空。
   function switchView(v) {
-    view = v === 'arsenal' || v === 'bestiary' || v === 'skill' ? v : 'battle'
+    view = v === 'arsenal' || v === 'bestiary' || v === 'skill' || v === 'home' ? v : 'battle'
     const b = $('battleView'); const a = $('arsenalView'); const m = $('bestiaryView'); const k = $('skillView')
+    const h = $('homeView')
     if (!b || !a || !m) return
     b.classList.toggle('hidden', view !== 'battle')
     a.classList.toggle('hidden', view !== 'arsenal')
     m.classList.toggle('hidden', view !== 'bestiary')
     if (k) k.classList.toggle('hidden', view !== 'skill')
+    if (h) h.classList.toggle('hidden', view !== 'home')
     const tb = $('tabBattle'); const ta = $('tabArsenal'); const tm = $('tabBestiary'); const tk = $('tabSkill')
+    const th = $('tabHome')
     if (tb) tb.classList.toggle('active', view === 'battle')
     if (ta) ta.classList.toggle('active', view === 'arsenal')
     if (tm) tm.classList.toggle('active', view === 'bestiary')
     if (tk) tk.classList.toggle('active', view === 'skill')
+    if (th) th.classList.toggle('active', view === 'home')
     if (view === 'arsenal') renderArsenal()
     if (view === 'bestiary') renderBestiary()
     if (view === 'skill') renderSkills()
+    // 小屋只在激活时跑渲染循环，切走必须停，避免和宿主的 tick() 抢主线程
+    if (window.NibbleHome) {
+      if (view === 'home') window.NibbleHome.mount()
+      else window.NibbleHome.unmount()
+    }
   }
 
   const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary']
@@ -883,6 +893,9 @@
   // —— 宿主消息处理（IDE Webview 与本地预览共用同一套逻辑）——
   function onMessage(msg) {
     if (!msg) return
+    // 小屋（家园）存档跟着 tick/state 一起到。applyHome 只在第一次生效，
+    // 之后以本地摆放为准，重复调用是空操作。
+    if (msg.home && window.NibbleHome) window.NibbleHome.applyHome(msg.home)
     if (msg.type === 'state') applyState(msg)
     else if (msg.type === 'tick') {
       tick = msg
@@ -955,6 +968,8 @@
           (msg.list[0] && msg.list[0].id) ||
           null
       }
+      // 小屋的墙面陈列直接复用这份精灵数据，不再单独向后端要
+      if (window.NibbleHome) window.NibbleHome.setAssets('weapons', msg.list, msg.sprites, msg.owned)
       if (view === 'arsenal') renderArsenal()
     } else if (msg.type === 'bestiaryData') {
       bestiary = {
@@ -972,6 +987,7 @@
           seenIds[0] ||
           ((msg.list || [])[0] ? msg.list[0].id : null)
       }
+      if (window.NibbleHome) window.NibbleHome.setAssets('enemies', msg.list, msg.sprites, msg.defeated)
       if (view === 'bestiary') renderBestiary()
     } else if (msg.type === 'skillData') {
       skills = {
@@ -1016,6 +1032,8 @@
     if (tabBestiary) tabBestiary.onclick = () => switchView('bestiary')
     const tabSkill = $('tabSkill')
     if (tabSkill) tabSkill.onclick = () => switchView('skill')
+    const tabHome = $('tabHome')
+    if (tabHome) tabHome.onclick = () => switchView('home')
     // 战斗页右下角的 4 槽：点任意格子 → 技能书页（并选中槽里那本，方便换）
     const strip = $('kslotWrap')
     if (strip) {
@@ -1043,6 +1061,10 @@
   switchView('battle')
 
   if (hasHost) {
+    // 小屋布局变更 → 一条消息落盘（松手/换套装才发，不在拖动过程中连续写）
+    if (window.NibbleHome) {
+      window.NibbleHome.setCommit((home) => api.postMessage({ type: 'homeSave', home }))
+    }
     window.addEventListener('message', (e) => onMessage(e.data || {}))
     const btnAttack = $('attack')
     if (btnAttack) btnAttack.onclick = () => api.postMessage({ type: 'attack' })

@@ -388,6 +388,9 @@ function tick() {
     // 施放管线（第五刀·表现）：本 tick 播到第几帧（0 = 起手，-1 = 没有在播）。
     // 相位时钟必须由宿主走：tickMs 是可配置的，面板自己数帧会跟节拍脱钩。
     castPhase: castPipe ? castPipe.phase : -1,
+    // 小屋（家园）：只在面板切换视图时用一次。体积很小（6 件家具 × 3 个数字），
+    // 跟着 tick 走比单开一条请求-响应通道简单。
+    home: st.home || null,
   }
   // 相位推进放在"装好这条 tick 消息之后"：本 tick 推出去的相位要是**当前**这一帧
   if (castPipe && ++castPipe.phase >= castPipe.frames) castPipe = null
@@ -402,10 +405,18 @@ function buildHtml(webview, inView) {
   // 战斗场景是独立模块（scene.css / scene.js）：官网不加载它们，所以官网面板保持原样
   const sceneCss = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.css')))) + v
   const sceneJs = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'scene.js')))) + v
+  // 小屋（家园）：脚本有严格顺序（像素数据 → 数据 → 逻辑 → 图集 → 后端 → 装配），不能打乱
+  // furniture-pixels.js 是构建期产物，home-atlas.js 要用它；缺失时图集会回退到程序化绘制。
+  const homeCss = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'home.css')))) + v
+  const homeJs = ['furniture-pixels.js', 'home-data.js', 'home-scene.js', 'home-atlas.js', 'home-gl.js', 'home-2d.js', 'home-view.js']
+    .map((name) => '<script src="' + String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), name)))) + v + '"></script>')
+    .join('\n')
   let html = fs.readFileSync(path.join(MEDIA(), 'panel.html'), 'utf8')
   html = html.replace('<!--PET_JS-->', '<script src="' + petJs + '"></script>')
   html = html.replace('<!--SCENE_CSS-->', '<link rel="stylesheet" href="' + sceneCss + '">')
   html = html.replace('<!--SCENE_JS-->', '<script src="' + sceneJs + '"></script>')
+  html = html.replace('<!--HOME_CSS-->', '<link rel="stylesheet" href="' + homeCss + '">')
+  html = html.replace('<!--HOME_JS-->', homeJs)
   if (inView) html = html.replace('<body>', '<body class="in-view">')
   return html
 }
@@ -451,6 +462,12 @@ function wireMessages(webview) {
         lastKey = ''
         lastSkillKey = ''
         tick()
+      } catch { /* 存档读写失败时静默忽略 */ }
+    } else if (msg.type === 'homeSave') {
+      // 只在松手 / 换套装时收到一条，不在拖动过程中连续写盘
+      try {
+        sp.saveHome(msg.home)
+        lastKey = ''
       } catch { /* 存档读写失败时静默忽略 */ }
     } else if (msg.type === 'expand') {
       openEditorPanel()
@@ -592,6 +609,23 @@ function activate(context) {
     vscode.commands.registerCommand('nibble.openSkill', () => {
       openEditorPanel()
       post(panel && panel.webview, { type: 'view', view: 'skill' })
+    }),
+    vscode.commands.registerCommand('nibble.openHome', () => {
+      openEditorPanel()
+      post(panel && panel.webview, { type: 'view', view: 'home' })
+    }),
+    // 调试：本地一次性解锁全部家具 / 恢复开局进度。正式玩法靠掉落，这两个只是看效果用。
+    vscode.commands.registerCommand('nibble.unlockAllHome', () => {
+      const n = sp.unlockAllHome()
+      lastKey = ''
+      tick()
+      vscode.window.showInformationMessage('已解锁全部家具（' + n + ' 件，仅本地存档）')
+    }),
+    vscode.commands.registerCommand('nibble.resetHomeOwned', () => {
+      const n = sp.resetHomeOwned()
+      lastKey = ''
+      tick()
+      vscode.window.showInformationMessage('家具进度已恢复开局（' + n + ' 件）')
     }),
     vscode.commands.registerCommand('nibble.reset', () => {
       sp.reset()

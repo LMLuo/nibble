@@ -1209,6 +1209,37 @@
     pendingCast: null,
     bestiary: { seen: Object.assign({}, D.demo.seen), defeated: Object.assign({}, D.demo.defeated) },
     lastLog: 'Nibble 待命中…（在 IDE 里：向 CodeBuddy 提问即可发动攻击）',
+    // 小屋（家园）演示存档：与扩展 home 字段同构（skins/layout/owned/pity）。
+    // 给"玩了一阵"的观感：整套暖木 + 旧书房 + 半套霓虹，混搭着摆，装饰摆了几件。
+    // 访客在小屋里的改动经 homeSave 回写到 s.home（仅本次会话，刷新重置）。
+    home: (function () {
+      const owned = {}
+      const slots = ['floor', 'wall', 'bed', 'desk', 'chair', 'lamp', 'rug', 'deco']
+      slots.forEach(function (k) { owned['wood_' + k] = true }) // 整套暖木
+      slots.forEach(function (k) { owned['study_' + k] = true }) // 整套旧书房
+      owned.neon_bed = true
+      owned.neon_lamp = true
+      owned.neon_floor = true
+      owned.star_rug = true
+      owned.moss_chair = true
+      // 20 件装饰：普通 + 稀有全给，让仓库装饰页不空
+      ;['plant', 'books', 'mug', 'globe', 'boxes', 'floorlamp', 'guitar', 'tank', 'catbed', 'coffee', 'sofa', 'cabinet', 'turntable'].forEach(function (id) { owned[id] = true })
+      return {
+        skins: {
+          floor: 'wood_floor', wall: 'study_wall', bed: 'study_bed', desk: 'wood_desk',
+          chair: 'moss_chair', lamp: 'neon_lamp', rug: 'star_rug', deco: 'wood_deco',
+        },
+        layout: [
+          { key: 'plant', gx: 0, gy: 6 },
+          { key: 'shelf', gx: 7, gy: 0 },
+          { key: 'sofa', gx: 3, gy: 4 },
+          { key: 'guitar', gx: 9, gy: 3 },
+          { key: 'tank', gx: 0, gy: 3 },
+        ],
+        owned: owned,
+        pity: 3,
+      }
+    })(),
   }
 
   function spawnEnemy(entry, rarity) {
@@ -1465,6 +1496,8 @@
       streakTier: streakOf().tier,
       streakBonus: streakOf().bonus,
       lastDmg: Math.max(0, Number(s.lastDmg) || 0),
+      // 小屋（家园）：extension.js 的 buildState 同款字段，pet.js 转交给 NibbleHome.applyHome
+      home: s.home || null,
       key: e.type + '|' + e.rarity + '|' + e.maxHp + '|' + s.battles + '|' + (s.equipped || '') + '|' + (w ? w.id : '') + '|' + streakOf().count,
       arsenal: summary,
       weaponSprite: w ? weaponSprite(w.id) : null,
@@ -1649,6 +1682,10 @@
           post(Object.assign({ type: 'state' }, buildState()))
           post(skillData())
           beat()
+        }
+        if (msg.type === 'homeSave') {
+          // 小屋搭配回写：仅写进演示存档（本次会话有效，刷新重置），无网络无存档文件
+          if (msg.home && typeof msg.home === 'object') s.home = msg.home
         }
       },
     }

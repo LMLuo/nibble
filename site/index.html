@@ -33,6 +33,7 @@
 -->
 <link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="scene.css?v={{VERSION}}">
+<link rel="stylesheet" href="home.css?v={{VERSION}}">
 </head>
 <body>
 
@@ -94,6 +95,7 @@
           <button type="button" id="tabArsenal" class="tab">🎒 武器库</button>
           <button type="button" id="tabBestiary" class="tab">📖 怪物库</button>
           <button type="button" id="tabSkill" class="tab">✦ 技能书</button>
+          <button type="button" id="tabHome" class="tab">🏠 小屋</button>
         </div>
         <div class="panel">
           <div id="battleView">
@@ -192,6 +194,23 @@
               <div class="abtns" id="kdetailBtns"></div>
             </div>
             <div id="kgroups"></div>
+          </div>
+          <!-- 小屋（家园）：与扩展 panel.html 同构，home-view.js 靠这些 id 找节点。
+               数据由 site.js 的演示存档提供（s.home），改动通过 homeSave 回写演示存档（仅本次会话）。 -->
+          <div id="homeView" class="hidden">
+            <aside class="homeSide homeLeft" id="homeSets"></aside>
+            <div class="homeStage" id="homeStage">
+              <canvas id="homeCanvas"></canvas>
+              <div class="homeHint" id="homeHint">点左栏槽位换家具 · 底部「仓库」看全部 · 拖空白处平移</div>
+            </div>
+            <aside class="homeSide homeRight" id="homeMounts"></aside>
+            <div class="homeBar">
+              <button id="homeZoomOut" title="缩小">−</button>
+              <span id="homeZoomLabel">2x</span>
+              <button id="homeZoomIn" title="放大">+</button>
+              <button id="homeReset">重排</button>
+              <span id="homeBackend"></span>
+            </div>
           </div>
         </div>
         <div id="toast"><canvas id="toastIcon" width="24" height="24"></canvas><span id="toastText"></span></div>
@@ -470,6 +489,14 @@
   </div>
 </footer>
 
+<!-- 小屋（家园）全家桶：与扩展 buildHtml 同一注入顺序，缺一不可（furniture-pixels 必须在 home-atlas 之前） -->
+<script src="furniture-pixels.js?v={{VERSION}}"></script>
+<script src="home-data.js?v={{VERSION}}"></script>
+<script src="home-scene.js?v={{VERSION}}"></script>
+<script src="home-atlas.js?v={{VERSION}}"></script>
+<script src="home-gl.js?v={{VERSION}}"></script>
+<script src="home-2d.js?v={{VERSION}}"></script>
+<script src="home-view.js?v={{VERSION}}"></script>
 <script src="demo-data.js"></script>
 <script src="site.js"></script>
 <script src="scene.js?v={{VERSION}}"></script>

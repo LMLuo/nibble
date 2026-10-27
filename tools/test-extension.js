@@ -115,6 +115,12 @@ console.log('   含场景 canvas: ' + vHtml.includes('<canvas id="scene"'))
 console.log('   已注入 pet.js: ' + vHtml.includes('pet.js'))
 console.log('   已注入 scene.js（新场景模块）: ' + vHtml.includes('scene.js'))
 console.log('   body 带 in-view（紧凑尺寸）: ' + vHtml.includes('class="in-view"'))
+// 小屋：六个脚本有严格加载顺序，任何一个漏注入都会让「小屋」页整块空白
+const HOME_SCRIPTS = ['furniture-pixels.js', 'home-data.js', 'home-scene.js', 'home-atlas.js', 'home-gl.js', 'home-2d.js', 'home-view.js']
+const homeInjected = HOME_SCRIPTS.every((n) => vHtml.includes(n))
+console.log('   已注入小屋 6 个脚本: ' + homeInjected)
+const okHome = homeInjected && vHtml.includes('id="homeView"') && vHtml.includes('id="homeCanvas"')
+console.log('   含小屋视图容器: ' + (vHtml.includes('id="homeView"') && vHtml.includes('id="homeCanvas"')))
 
 console.log('3) 等待 tick（含一次攻击）…')
 const sp = require(path.join(__dirname, '..', 'plugins', 'nibble', 'hooks', 'nibble.js'))
@@ -182,8 +188,8 @@ setTimeout(() => {
       console.log('   写盘后能读回: ' + okCast)
       if (!okCast) console.log('   ❌ lastCast 在 loadSave() 里被丢了：面板收不到施放消息')
       console.log('')
-      const ok = okView && okTel && formProblems.length === 0 && okCast
-      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 匿名统计 / 技能书原语指派 / lastCast 还原 有不正确项')
+      const ok = okView && okHome && okTel && formProblems.length === 0 && okCast
+      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 小屋注入 / 匿名统计 / 技能书原语指派 / lastCast 还原 有不正确项')
       process.exit(ok ? 0 : 1)
     })
     .catch((err) => {
