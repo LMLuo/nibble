@@ -1036,13 +1036,15 @@ function attack(s) {
   log += ` +${gain}XP`
   if (ups > 0) log += `　⬆ 升级 Lv ${s.level}！`
   if (!s.arsenal) s.arsenal = parseArsenal(null)
-  const drop = rollWeapon(s.arsenal.pity)
+  const drop = rollWeapon(s.arsenal.pity, s.arsenal.owned)
   s.arsenal.pity = drop.pity
   // ≥25 连「燃」：掉落保底额外推进 1 步（加速保底，不改变单次掉落概率）
   if (sk.tier >= 2) s.arsenal.pity = Math.min(PITY_LIMIT, s.arsenal.pity + 1)
-  s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
-  s.lastDrop = { id: drop.weapon.id, at: Date.now() }
-  log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
+  if (drop.weapon) {
+    s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
+    s.lastDrop = { id: drop.weapon.id, at: Date.now() }
+    log += `　✦ 获得 ${RARITY_LABEL[drop.weapon.rarity]}·${drop.weapon.name}！`
+  }
   // 技能书：独立池（10% 掷 / 保底 20 只怪），不影响武器掉落、经验与连击
   const books = ensureSkills(s)
   const firstBook = Object.keys(books.owned).length === 0

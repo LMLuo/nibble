@@ -121,9 +121,10 @@ const WEAPON_TOTAL = WEAPONS.length
 const RARITY_COUNTS = { common: 0, rare: 0, epic: 0, legendary: 0 }
 for (const w of WEAPONS) RARITY_COUNTS[w.rarity] += 1
 
-// 掉率与保底
+// 掉率与保底：武器不再"每杀必掉"——与技能书/家具一样是独立掉落池
+const WEAPON_DROP_RATE = 0.2 // 每次击败的掉武器概率（空武器库首击必得，见 rollWeapon）
 const RARITY_DROP = { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 }
-const PITY_LIMIT = 40 // 连续 40 次未出史诗以上 → 下次必出史诗
+const PITY_LIMIT = 40 // 连续 40 次击败未出史诗以上 → 下次必出史诗（无视掉率）
 
 function pickByRarity(rarity) {
   const pool = []
@@ -140,13 +141,20 @@ function rollRarity(pity) {
   return 'legendary'
 }
 
-// 输入当前保底计数，返回 { weapon, pity }：出史诗/传说后清零，其余 +1
-function rollWeapon(pity) {
-  const cur = Number(pity) || 0
+// 输入当前保底计数与已拥有库存，返回 { weapon, pity }：
+//   - 20% 掷掉率，未掷中返回 { weapon: null, pity+1 }；pity 只数"未出史诗以上"的击败次数
+//   - pity 攒满 PITY_LIMIT → 本次无视掉率必出史诗
+//   - owned 为空（全新档）→ 必掉一把，保证第一击就能见到武器系统
+function rollWeapon(pity, owned) {
+  const cur = Math.max(0, Number(pity) || 0)
+  const next = cur + 1
+  if (next >= PITY_LIMIT) return { weapon: pickByRarity('epic'), pity: 0 }
+  const isEmpty = !owned || Object.keys(owned).length === 0
+  if (!isEmpty && Math.random() >= WEAPON_DROP_RATE) return { weapon: null, pity: next }
   const rarity = rollRarity(cur)
   return {
     weapon: pickByRarity(rarity),
-    pity: rarity === 'epic' || rarity === 'legendary' ? 0 : cur + 1,
+    pity: rarity === 'epic' || rarity === 'legendary' ? 0 : next,
   }
 }
 
@@ -202,7 +210,7 @@ function weaponSpriteGrid(id, mode) {
 }
 
 module.exports = {
-  WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, RARITY_DROP, PITY_LIMIT, rollWeapon,
+  WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, RARITY_DROP, WEAPON_DROP_RATE, PITY_LIMIT, rollWeapon,
   weaponSpriteGrid, WEAPON_PIXEL_DATA,
   // 战力（百分比攻击加成）：稀有度定档 + 已拥有最强武器查找
   WEAPON_POWER, bestOwnedWeapon,

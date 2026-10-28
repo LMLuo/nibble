@@ -295,6 +295,7 @@ function buildDemoData() {
       rarityCounts: sp.RARITY_COUNTS,
       weaponTotal: sp.WEAPON_TOTAL,
       weaponPower: sp.WEAPON_POWER,
+      weaponDropRate: wp.WEAPON_DROP_RATE,
       pityLimit: sp.PITY_LIMIT,
       // 技能书：数字同样只从技能库真源取，页面上不写死
       skillTotal: sp.SKILL_TOTAL,
@@ -386,6 +387,7 @@ function fill(tpl, data) {
     '{{SKILL_DROP}}': pct(m.skillDropRate),
     '{{SKILL_PITY_LIMIT}}': m.skillPityLimit,
     '{{DROP_ODDS}}': order.map((r) => `${m.rarityLabel[r]} ${pct(m.dropOdds[r])}`).join(' / '),
+    '{{WEAPON_DROP}}': pct(m.weaponDropRate),
     '{{POWER_ODDS}}': order.map((r) => `${m.rarityLabel[r]} +${m.weaponPower[r]}%`).join(' / '),
   }
   let out = tpl

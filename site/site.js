@@ -1117,11 +1117,19 @@
     if (r < 0.98) return 'epic'
     return 'legendary'
   }
-  function rollWeapon(pity) {
+  // 武器掉落（照抄 weapons.js）：20% 掷；连续 40 击未出史诗以上必出史诗；空武器库首击必得
+  function rollWeapon(pity, owned) {
+    const next = pity + 1
+    if (next >= M.pityLimit) {
+      const epicPool = D.weapons.filter((w) => w.rarity === 'epic')
+      return { weapon: epicPool[Math.min(epicPool.length - 1, Math.floor(rnd() * epicPool.length))], pity: 0 }
+    }
+    const isEmpty = !owned || Object.keys(owned).length === 0
+    if (!isEmpty && rnd() >= M.weaponDropRate) return { weapon: null, pity: next }
     const rarity = rollRarity(pity)
     const pool = D.weapons.filter((w) => w.rarity === rarity)
     const weapon = pool[Math.min(pool.length - 1, Math.floor(rnd() * pool.length))]
-    return { weapon, pity: rarity === 'epic' || rarity === 'legendary' ? 0 : pity + 1 }
+    return { weapon, pity: rarity === 'epic' || rarity === 'legendary' ? 0 : next }
   }
 
   // 技能书掉落（照抄 skills.js）：10% 概率；连续 30 只没出"稀有及以上"必掉一本稀有
@@ -1386,13 +1394,15 @@
     log += ' +' + gain + 'XP'
     if (ups > 0) log += '　⬆ 升级 Lv ' + s.level + '！'
 
-    const drop = rollWeapon(s.arsenal.pity)
+    const drop = rollWeapon(s.arsenal.pity, s.arsenal.owned)
     s.arsenal.pity = drop.pity
     // ≥25 连「燃」：保底额外推进 1 步（与扩展一致）
     if (sk.tier >= 2) s.arsenal.pity = Math.min(M.pityLimit, s.arsenal.pity + 1)
-    s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
-    s.lastDrop = { id: drop.weapon.id, at: Date.now() }
-    log += '　✦ 获得 ' + drop.weapon.rarityLabel + '·' + drop.weapon.name + '！'
+    if (drop.weapon) {
+      s.arsenal.owned[drop.weapon.id] = (s.arsenal.owned[drop.weapon.id] || 0) + 1
+      s.lastDrop = { id: drop.weapon.id, at: Date.now() }
+      log += '　✦ 获得 ' + drop.weapon.rarityLabel + '·' + drop.weapon.name + '！'
+    }
 
     // 技能书：10% + 30 只保底（与扩展同口径）
     const skillBook = rollSkillDrop()
@@ -1417,14 +1427,16 @@
     const next = ENEMY[s.enemy.type]
     log += '　新的野生 ' + next.name + '（' + next.tierLabel + '·' + M.rarityLabel[s.enemy.rarity] + '）出现'
     s.lastLog = log
-    pendingDrop = {
-      type: 'drop',
-      name: drop.weapon.name,
-      rarity: drop.weapon.rarity,
-      color: drop.weapon.color,
-      rarityLabel: drop.weapon.rarityLabel,
-      story: drop.weapon.story,
-      sprite: weaponSprite(drop.weapon.id),
+    if (drop.weapon) {
+      pendingDrop = {
+        type: 'drop',
+        name: drop.weapon.name,
+        rarity: drop.weapon.rarity,
+        color: drop.weapon.color,
+        rarityLabel: drop.weapon.rarityLabel,
+        story: drop.weapon.story,
+        sprite: weaponSprite(drop.weapon.id),
+      }
     }
     if (skillBook) {
       pendingSkillDrop = {
