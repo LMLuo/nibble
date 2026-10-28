@@ -1,16 +1,30 @@
 # Nibble · 住在编辑器里的像素小狗
 
+*A pixel pup that lives in your editor — fights bugs, collects loot, keeps a little home.*
+
 **提问即攻击。** 你每次向 AI 提问（或保存文件），这只住在**底部面板 / 状态栏**的像素小狗就自动打掉一只
 「编程 Bug」怪——升级、掉武器、捡技能书、收集图鉴，等级与进度**跨会话保存**。连续提问还会累积**连击**：
 光环在脚下亮起，专注看得见。怪物也会反击：血量见底只是被击退一场，不扣任何东西。
-打下来的战利品可以装进**等距 2.5D 的小屋**：逐件挑家具、铺地板、贴墙纸，装修成自己的风格。
+打下来的战利品可以装进**等距 2.5D 的小屋**：它会在屋里自己走动、追球、趴睡、打哈欠，你把家具逐件摆成自己的风格。
 常驻、自动动画、**零 token**。
+
+## 0.7.0 新增
+
+- **它会在屋里自己过日子**：走动、追球、趴睡、打哈欠，点一下还会蹦
+- **离开 72 小时会落灰**：回来自己打扫，还从角落翻出一件家具送你
+- **战斗里也有表情了**：施放张嘴发狠、挨打闭眼、击杀欢呼
 
 <!-- 图片用绝对地址：扩展在仓库子目录 vscode-extension/ 下，
      vsce 自动重写的相对路径会漏掉这一层（会 404），所以这里手写 raw 链接。改图请同步路径。 -->
 <p align="center">
-  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/panel-preview.png" width="720"
-       alt="Nibble 底部面板：像素小狗脚下亮起连击光环、头顶挂着 ×12 徽标，对上精英怪「竞态幽灵」，装备栏挂着「重构之刃 +15%」">
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/shots/home.png" width="720"
+       alt="Nibble 小屋：等距 2.5D 房间里，像素小狗正走到床边，四周是暖木家具">
+</p>
+<p align="center">
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/shots/home-walk.gif" width="560"
+       alt="Nibble 小屋：小狗追着脚边的小球，走来走去">
+  <img src="https://github.com/LMLuo/nibble/raw/main/vscode-extension/media/shots/battle-cast.gif" width="560"
+       alt="Nibble 战斗：小狗施放时龇牙发狠，头顶红色怒气符号，技能束打向怪物">
 </p>
 
 <sub>安装：<b>VS Code</b> 用 <a href="https://marketplace.visualstudio.com/items?itemName=nibble.nibble">Visual Studio Marketplace</a>；<b>CodeBuddy / VSCodium / Cursor</b> 用 <a href="https://open-vsx.org/extension/nibble/nibble">Open VSX</a> —— 搜 <b>Nibble</b> 即可。</sub>
@@ -57,7 +71,7 @@
 
 ## 功能
 
-- **底部面板**：24×24 真彩像素小狗，待机上下浮动 / 攻击前冲 / 击败像素消散，带经验条与战斗日志
+- **底部面板**：24×24 真彩像素小狗，待机呼吸 / 攻击发狠 / 施放张嘴 / 挨打闭眼 / 击杀欢呼 / 击败像素消散，带经验条与战斗日志
 - **状态栏**：`♥ Lv1 ████████ 36/36 空指针幽灵`（心形条是**玩家 HP**，tooltip 里另给敌方 HP），随战斗实时变化，点击展开面板
 - **战斗循环**：提问即攻击 → 敌人掉血 → 血量归零则击败 → 刷新下一只；敌人没死就反击一次
 - **出手有演出**：每次施放拆成「起手 → 生成 → 命中 →（追击）→（反击）」——命中那一拍才结算血条、玩家 HP 与击杀；

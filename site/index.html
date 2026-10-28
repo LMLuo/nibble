@@ -320,8 +320,8 @@
       <h2>它长什么样</h2>
       <div class="shots">
         <figure class="shot">
-          <img src="panel-preview.png" width="880" height="295" alt="Nibble 战斗面板：像素场景中小狗脚下亮起连击光环、头顶挂着 ×12 徽标，对上精英怪，装备槽挂着武器" loading="lazy">
-          <figcaption><b>⚔ 战斗</b>：像素场景 + 连击光环 + 装备槽 + 战斗日志，一滴水都不占你屏幕。</figcaption>
+          <img src="shots/battle.png" width="960" height="269" alt="Nibble 战斗页：施放瞬间小狗龇牙发狠、头顶红色怒气符号，技能束打向怪物" loading="lazy">
+          <figcaption><b>⚔ 战斗</b>：施放会张嘴发狠、挨打会闭眼、击杀会欢呼——连击光环 + 装备槽 + 战斗日志，一滴水都不占屏幕。</figcaption>
         </figure>
         <figure class="shot">
           <img src="bestiary-preview.png" width="900" height="435" alt="Nibble 怪物库：40 只怪物按小怪/精英/头目分组的图鉴" loading="lazy">
@@ -330,6 +330,25 @@
       </div>
       <h3 class="wall-title">🎒 武器库：{{WEAPON_TOTAL}} 把，四档稀有度</h3>
       <ul class="rarity">{{RARITY_TABLE}}</ul>
+    </div>
+  </section>
+
+  <!-- ============================ 小屋 ============================ -->
+  <section id="home" class="sec">
+    <div class="wrap">
+      <p class="kicker"><span class="pt pt-sm" data-pt="HOME">HOME</span></p>
+      <h2>它还会在屋里自己过日子</h2>
+      <div class="shots">
+        <figure class="shot">
+          <img src="shots/home.png" width="960" height="686" alt="Nibble 小屋：等距 2.5D 房间里，像素小狗正走到床边，四周是暖木家具" loading="lazy">
+          <figcaption><b>🏠 它有自己的房间</b>：等距 2.5D，{{HOME_SKIN_TOTAL}} 件装潢 + {{HOME_EXTRA_TOTAL}} 件装饰，全靠击败掉落（{{HOME_DROP}}），逐件摆出自己的风格。</figcaption>
+        </figure>
+      </div>
+      <ul class="plain">
+        <li>它会自己走动、追球、趴下、翻肚皮，点一下还会蹦起来冒颗心。</li>
+        <li>离开 72 小时会落灰趴睡；回来自己打扫，还从角落翻出一件家具送你。</li>
+        <li>家具只进仓库、摆不摆由你；{{HOME_EXTRA_MAX}} 个装饰位，60 件集齐约需 950 次击杀。</li>
+      </ul>
     </div>
   </section>
 

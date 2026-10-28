@@ -7,7 +7,8 @@
   "scripts": {
     "sync": "node tools/sync-lib.js",
     "icon": "node tools/make-icon.js",
-    "test": "node tools/test-extension.js",
+    "test": "node tools/test-extension.js && node tools/check-facts.js",
+    "facts": "node tools/check-facts.js",
     "package": "node tools/sync-lib.js && node tools/make-vsix.js",
     "package:official": "node tools/sync-lib.js && node tools/pack-vsce.js",
     "install-local": "node tools/install-extension.js",

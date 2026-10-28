@@ -299,6 +299,11 @@ function buildDemoData() {
       weaponPower: sp.WEAPON_POWER,
       weaponDropRate: wp.WEAPON_DROP_RATE,
       pityLimit: sp.PITY_LIMIT,
+      // 小屋（家园）件数：数字从真源算，页面上不写死（改掉率/加件这里自动跟上）
+      homeSkinTotal: sp.HOME_SERIES.length * sp.HOME_SKIN_SLOTS.length,
+      homeExtraTotal: sp.HOME_EXTRA_IDS.length,
+      homeExtraMax: sp.HOME_EXTRA_MAX,
+      homeDropRate: sp.HOME_DROP_RATE,
       // 技能书：数字同样只从技能库真源取，页面上不写死
       skillTotal: sp.SKILL_TOTAL,
       skillTags: sp.TAG_KEYS.length,
@@ -380,6 +385,10 @@ function fill(tpl, data) {
     '{{ENEMY_WALL}}': wall,
     '{{BUG_QUOTES}}': quotes,
     '{{RARITY_TABLE}}': rarities,
+    '{{HOME_SKIN_TOTAL}}': m.homeSkinTotal,
+    '{{HOME_EXTRA_TOTAL}}': m.homeExtraTotal,
+    '{{HOME_EXTRA_MAX}}': m.homeExtraMax,
+    '{{HOME_DROP}}': pct(m.homeDropRate),
     // 12 个招式原语：英文 id 来自真源，中文名在 MOVE_LABEL（缺一个就构建失败，避免悄悄少一招）
     '{{MOVE_CHIPS}}': moveChips().chips,
     '{{MOVE_TOTAL}}': moveChips().total,
@@ -462,6 +471,16 @@ function build() {
 
   // 2) 复用扩展素材
   for (const name of COPIES) copyFile(path.join(MEDIA_DIR, name), path.join(OUT_DIR, name))
+
+  // 2.5) 小屋/战斗截图：媒体素材统一放 media/shots/（不进 vsix）。官网只复制**页面实际引用**的
+  // 两张静图（home / battle），GIF 与其余样张不给官网——体积硬线是 +200KB/次，多拷一张就超。
+  const SITE_SHOTS = ['home.png', 'battle.png']
+  const shotsOut = path.join(OUT_DIR, 'shots')
+  fs.mkdirSync(shotsOut, { recursive: true })
+  for (const f of SITE_SHOTS) {
+    const src = path.join(MEDIA_DIR, 'shots', f)
+    if (fs.existsSync(src)) copyFile(src, path.join(shotsOut, f))
+  }
 
   // 3) 演示数据（构建期生成，不入库）
   fs.writeFileSync(

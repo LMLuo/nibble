@@ -6,10 +6,18 @@
 
 一只像素小狗，住在 **CodeBuddy / VS Code** 的**状态栏**和**底部面板**里。
 你每次向 AI 提问（或保存文件），它就**打一只怪**——升级、掉武器、捡技能书、收集图鉴，进度跨会话保存。
-打下来的战利品可以装进**等距 2.5D 的小屋**：逐件挑家具、铺地板、贴墙纸，装修成自己的风格。
+打下来的战利品可以装进**等距 2.5D 的小屋**：它会在屋里自己走动、追球、趴睡、打哈欠，你把家具逐件摆成自己的风格。
 连续提问还会累积**连击**：光环在脚下亮起，专注看得见；怪物也会反击，被击退只是白打一场，不扣任何东西。
 
-<p><img src="vscode-extension/media/panel-preview.png" width="720" alt="Nibble 战斗页：像素场景、连击光环与 ×12 徽标"></p>
+## 0.7.0 新增
+
+- **它会在屋里自己过日子**：走动、追球、趴睡、打哈欠，点一下还会蹦
+- **离开 72 小时会落灰**：回来自己打扫，还从角落翻出一件家具送你
+- **战斗里也有表情了**：施放张嘴发狠、挨打闭眼、击杀欢呼
+
+<p><img src="vscode-extension/media/shots/home.png" width="720" alt="Nibble 小屋：像素小狗正走到床边，四周是暖木家具"></p>
+<p><img src="vscode-extension/media/shots/home-walk.gif" width="560" alt="Nibble 小屋：小狗追着脚边的小球，走来走去"></p>
+<p><img src="vscode-extension/media/shots/battle-cast.gif" width="560" alt="Nibble 战斗：小狗施放时龇牙发狠，头顶红色怒气符号，技能束打向怪物"></p>
 
 **👉 官网（不用装就能玩）：[lmluo.github.io/nibble](https://lmluo.github.io/nibble/)**
 把一句报错丢进去，看它变成哪只怪、拾玖当场开打——纯在浏览器里算，不上传、不联网。
