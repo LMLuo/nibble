@@ -116,9 +116,16 @@ console.log('   已注入 pet.js: ' + vHtml.includes('pet.js'))
 console.log('   已注入 scene.js（新场景模块）: ' + vHtml.includes('scene.js'))
 console.log('   body 带 in-view（紧凑尺寸）: ' + vHtml.includes('class="in-view"'))
 // 小屋：六个脚本有严格加载顺序，任何一个漏注入都会让「小屋」页整块空白
-const HOME_SCRIPTS = ['furniture-pixels.js', 'home-data.js', 'home-scene.js', 'home-atlas.js', 'home-gl.js', 'home-2d.js', 'home-view.js']
+const HOME_SCRIPTS = [
+  'furniture-pixels.js', 'actor-frames.js', 'home-data.js', 'home-scene.js',
+  'home-atlas.js', 'home-gl.js', 'home-2d.js', 'home-actor.js', 'home-view.js',
+]
 const homeInjected = HOME_SCRIPTS.every((n) => vHtml.includes(n))
-console.log('   已注入小屋 6 个脚本: ' + homeInjected)
+console.log('   已注入小屋 9 个脚本（含角色帧与行为）: ' + homeInjected)
+// 战斗页要用 actor-frames.js 的表情帧：它必须在小屋脚本块里、且排在 scene.js 之前
+const okFrameOrder = vHtml.indexOf('actor-frames.js') >= 0 &&
+  vHtml.indexOf('actor-frames.js') < vHtml.indexOf('scene.js')
+console.log('   角色帧在 scene.js 之前注入（战斗页表情的前提）: ' + okFrameOrder)
 const okHome = homeInjected && vHtml.includes('id="homeView"') && vHtml.includes('id="homeCanvas"')
 console.log('   含小屋视图容器: ' + (vHtml.includes('id="homeView"') && vHtml.includes('id="homeCanvas"')))
 
@@ -187,9 +194,78 @@ setTimeout(() => {
       const okCast = Boolean(back.lastCast && back.lastCast.id === 'print_debug' && back.lastCast.form === 'chars')
       console.log('   写盘后能读回: ' + okCast)
       if (!okCast) console.log('   ❌ lastCast 在 loadSave() 里被丢了：面板收不到施放消息')
+
+      // 7) 小屋久别（72h）：口径是"离开 ≥72h 才结算一次，且只给一件未拥有的家具"。
+      //    这里直接调纯逻辑函数，不碰存档文件，也不依赖真实时间。
+      console.log('7) 小屋久别结算（72h）…')
+      const HOURLY = 3600000
+      const t0 = 1700000000000
+      const fake = { home: sp.parseHome(null) }
+      const a1 = sp.touchHomeAway(fake, t0) // 首次：只记 lastSeen，不触发
+      const a2 = sp.touchHomeAway(fake, t0 + 3 * 24 * HOURLY) // 3 天：触发
+      const a3 = sp.touchHomeAway(fake, t0 + 3 * 24 * HOURLY + 1000) // 紧接着：不重复
+      const okAway =
+        sp.HOME_AWAY_MS === 72 * HOURLY &&
+        a1 === null &&
+        a2 && a2.hours === 72 && typeof a2.item === 'string' &&
+        Boolean(fake.home.owned[a2.item]) &&
+        a3 === null
+      console.log('   72h 常量: ' + (sp.HOME_AWAY_MS === 72 * HOURLY))
+      console.log('   首击不触发 / 3 天后触发一次 / 立即再击不重复: ' + (a1 === null && Boolean(a2) && a3 === null))
+      console.log('   奖励是一件"未拥有→已拥有"的家具: ' + (a2 && a2.item && fake.home.owned[a2.item] ? 'true' : 'false'))
+      if (!okAway) console.log('   ❌ 久别结算口径不对（检查 HOME_AWAY_MS / touchHomeAway / pickAwayGift）')
+
+      // 存档往返：lastSeen / wake 必须活着回来（parseHome 漏字段的话，面板永远看不到落灰与醒来）
+      const round = sp.parseHome(fake.home)
+      const okRound =
+        round.lastSeen === fake.home.lastSeen &&
+        round.wake && round.wake.at === a2.at && round.wake.item === a2.item
+      const badWake = sp.parseHome({ wake: { at: Date.now(), hours: 3, item: 'not_a_real_item' } }).wake
+      const okBad = Boolean(badWake) && badWake.item === null
+      // seen：播过就不再重播（漏这个字段 → 每次启动都演一遍"你回来啦"）
+      const seenParsed = sp.parseHome({ wake: { at: Date.now(), hours: 3, item: null, seen: true } }).wake
+      const okSeen = Boolean(seenParsed) && seenParsed.seen === true && a2.seen === false
+      console.log('   lastSeen / wake 存档往返: ' + okRound)
+      console.log('   未知物品 id 被丢弃: ' + okBad)
+      console.log('   seen 标记（新事件 false / 已看 true）: ' + okSeen)
+      if (!okRound) console.log('   ❌ parseHome 丢了 lastSeen/wake：进面板看不到落灰与醒来演出')
+      // 8) 家具池集齐：rollFurniture 必须返回 done（不崩、不重复给件），
+      //    并且 allNotified 要能存档往返（否则会每杀一只刷一行"家具已集齐"）。
+      console.log('8) 家具池集齐 …')
+      const allOwned = {}
+      for (const id of sp.HOME_ITEM_IDS) allOwned[id] = true
+      const full = sp.rollFurniture(12, allOwned)
+      const okFullPool = full.done === true && full.item === null && full.pity === 0
+      const okNotified = sp.parseHome({ allNotified: true }).allNotified === true
+      console.log('   池空时不产出且标记 done: ' + okFullPool)
+      console.log('   allNotified 存档往返: ' + okNotified)
+
+      // 9) 小屋数据是否真的下发到面板。
+      //    ⚠️ 曾经 buildState 漏了 home 字段，tick 里又写 st.home → 面板永远收不到，
+      //    表现是"家具掉进存档了但仓库不点亮、布局也不恢复"。这条断言就是防它再断。
+      console.log('9) 小屋数据下发 …')
+      const st1 = ext.__buildState()
+      const okHomeInState = Boolean(st1.home && st1.home.owned && Object.keys(st1.home.owned).length >= 14)
+      const saveNow = sp.loadSave()
+      const unowned = sp.HOME_ITEM_IDS.filter((id) => !saveNow.home.owned[id])[0]
+      let okHomeDeliver = true
+      let okHomeKey = true
+      if (unowned) {
+        saveNow.home.owned[unowned] = true
+        sp.saveSave()
+        const st2 = ext.__buildState()
+        okHomeDeliver = Boolean(st2.home && st2.home.owned[unowned])
+        okHomeKey = st2.key !== st1.key // key 不变 = 面板收不到推送
+      }
+      const petSrc = fs.readFileSync(path.join(__dirname, '..', 'vscode-extension', 'media', 'pet.js'), 'utf8')
+      const okPetConsume = petSrc.indexOf('msg.home') >= 0 && petSrc.indexOf('applyHome') >= 0
+      console.log('   state 里带 home.owned: ' + okHomeInState)
+      console.log('   新增一件后 home 里有: ' + okHomeDeliver + '，且 key 变化: ' + okHomeKey)
+      console.log('   pet.js 消费 msg.home: ' + okPetConsume)
+      if (!okHomeInState) console.log('   ❌ buildState 没带 home：仓库永远显示开局 14 件')
       console.log('')
-      const ok = okView && okHome && okTel && formProblems.length === 0 && okCast
-      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 小屋注入 / 匿名统计 / 技能书原语指派 / lastCast 还原 有不正确项')
+      const ok = okView && okHome && okFrameOrder && okTel && formProblems.length === 0 && okCast && okAway && okRound && okBad && okSeen && okFullPool && okNotified && okHomeInState && okHomeDeliver && okHomeKey && okPetConsume
+      console.log(ok ? '✅ 扩展自检通过' : '❌ 扩展自检失败：视图 HTML / 小屋注入 / 匿名统计 / 技能书原语指派 / lastCast 还原 / 小屋久别 有不正确项')
       process.exit(ok ? 0 : 1)
     })
     .catch((err) => {

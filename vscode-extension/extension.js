@@ -74,6 +74,12 @@ function buildState() {
   const shown = sp.equippedWeapon(s) // 战斗页展示即生效：手动装备 → 否则自动取最高战力
   const weaponSprite = shown ? sp.weaponSpriteGrid(shown.id, true) : null
   const info = sp.enemyInfo(s.enemy.type)
+  // 小屋签名：owned 件数 / 保底 / 摆件数 / 醒来事件时间。只用来让 key 变化，
+  // 保证"掉落出一件家具""久别醒来"这种不影响战斗数值的变化也会推一次 state。
+  const home = s.home || null
+  const homeSig = home
+    ? Object.keys(home.owned || {}).length + ':' + (home.pity || 0) + ':' + ((home.layout || []).length) + ':' + (home.wake ? home.wake.at : 0)
+    : '0'
   return {
     player: flat(sp.decodeGrid('player').grid),
     enemy: flat(sp.enemyGrid(s.enemy.type, s.enemy.rarity, false)),
@@ -103,7 +109,7 @@ function buildState() {
     // 技能书：收集数与 4 槽装配变化同样并入 key
     key: s.enemy.type + '|' + s.enemy.rarity + '|' + s.enemy.maxHp + '|' + s.battles +
       '|' + (s.equipped || '') + '|' + (shown ? shown.id : '') + '|' + sk.count +
-      '|' + skills.owned + '|' + skills.slots.join(','),
+      '|' + skills.owned + '|' + skills.slots.join(',') + '|' + homeSig,
     arsenal,
     skills,
     weaponSprite: weaponSprite ? flat(weaponSprite) : null,
@@ -117,6 +123,10 @@ function buildState() {
     knockbackAt: Number(s.knockbackAt) || 0,
     // 技能出手（第四刀·表现）：本次施放了哪本书 + 标签实际生效结果（at 去重后推 type:'cast'）
     lastCast: s.lastCast || null,
+    // 小屋（家园）：仓库点亮、布局恢复、72h 落灰/醒来全靠它。
+    // ⚠️ 2026-10-28 修：此前这里漏了 home，tick 里又写 `st.home` 取到 undefined，
+    // 结果面板永远只显示开局 14 件（东西掉了也不点亮），布局每次重开都回默认。
+    home,
   }
 }
 
@@ -388,9 +398,8 @@ function tick() {
     // 施放管线（第五刀·表现）：本 tick 播到第几帧（0 = 起手，-1 = 没有在播）。
     // 相位时钟必须由宿主走：tickMs 是可配置的，面板自己数帧会跟节拍脱钩。
     castPhase: castPipe ? castPipe.phase : -1,
-    // 小屋（家园）：只在面板切换视图时用一次。体积很小（6 件家具 × 3 个数字），
-    // 跟着 tick 走比单开一条请求-响应通道简单。
-    home: st.home || null,
+    // 小屋（家园）**不随 tick 发**：单份约 2KB（60 件 owned + 布局 + 皮肤），
+    // 400ms 一条太浪费。它走 state（按 key 变化推送，面板 ready 时会补推一次）。
   }
   // 相位推进放在"装好这条 tick 消息之后"：本 tick 推出去的相位要是**当前**这一帧
   if (castPipe && ++castPipe.phase >= castPipe.frames) castPipe = null
@@ -408,7 +417,8 @@ function buildHtml(webview, inView) {
   // 小屋（家园）：脚本有严格顺序（像素数据 → 数据 → 逻辑 → 图集 → 后端 → 装配），不能打乱
   // furniture-pixels.js 是构建期产物，home-atlas.js 要用它；缺失时图集会回退到程序化绘制。
   const homeCss = String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), 'home.css')))) + v
-  const homeJs = ['furniture-pixels.js', 'home-data.js', 'home-scene.js', 'home-atlas.js', 'home-gl.js', 'home-2d.js', 'home-view.js']
+  // 顺序：像素数据 → 数据 → 逻辑 → 图集（吃角色帧）→ 后端 → 角色行为 → 装配
+  const homeJs = ['furniture-pixels.js', 'actor-frames.js', 'home-data.js', 'home-scene.js', 'home-atlas.js', 'home-gl.js', 'home-2d.js', 'home-actor.js', 'home-view.js']
     .map((name) => '<script src="' + String(webview.asWebviewUri(vscode.Uri.file(path.join(MEDIA(), name)))) + v + '"></script>')
     .join('\n')
   let html = fs.readFileSync(path.join(MEDIA(), 'panel.html'), 'utf8')
@@ -467,6 +477,12 @@ function wireMessages(webview) {
       // 只在松手 / 换套装时收到一条，不在拖动过程中连续写盘
       try {
         sp.saveHome(msg.home)
+        lastKey = ''
+      } catch { /* 存档读写失败时静默忽略 */ }
+    } else if (msg.type === 'homeWakeSeen') {
+      // 醒来演出播完：标记已看，避免下次打开面板又演一遍
+      try {
+        sp.markWakeSeen(msg.at)
         lastKey = ''
       } catch { /* 存档读写失败时静默忽略 */ }
     } else if (msg.type === 'expand') {
@@ -615,7 +631,14 @@ function activate(context) {
       post(panel && panel.webview, { type: 'view', view: 'home' })
     }),
     // 调试：本地一次性解锁全部家具 / 恢复开局进度。正式玩法靠掉落，这两个只是看效果用。
-    vscode.commands.registerCommand('nibble.unlockAllHome', () => {
+    // ⚠️ 解锁会把掉落池抽干（之后永远不掉家具），所以必须二次确认——曾经有人测完忘了，以为掉落坏了。
+    vscode.commands.registerCommand('nibble.unlockAllHome', async () => {
+      const pick = await vscode.window.showWarningMessage(
+        '解锁全部家具只是调试用：解锁后掉落池会空掉，之后不会再掉任何家具。\n要测掉落请先执行「Nibble: 恢复初始家具（调试）」。',
+        { modal: true },
+        '解锁全部'
+      )
+      if (pick !== '解锁全部') return
       const n = sp.unlockAllHome()
       lastKey = ''
       tick()
@@ -680,4 +703,4 @@ function deactivate() {
   timer = null
 }
 
-module.exports = { activate, deactivate }
+module.exports = { activate, deactivate, __buildState: buildState } // __buildState 仅供 tools/test-extension.js 断言

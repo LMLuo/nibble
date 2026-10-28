@@ -20,18 +20,20 @@
   var HH = D.TILE_H / 2
   var PAD = D.PAD_Y // 地面菱形之上留出的高度（墙与最高家具都画在这段里）
 
-  // 图集网格：6 列 × 11 行
+  // 图集网格：6 列 × 14 行
   //   行 0-4 = 5 套 × 6 件家具（每套一行）
   //   行 5   = 墙面挂点空槽（5 格）
   //   行 6   = 拖动高亮 ×2 + 家具落影
   //   行 7-10 = 20 件通用装饰（跨套装共用，只画一份）
+  //   行 11-12 = 角色动画帧（actor-frames.js，24×24，12 帧）
+  //   行 13  = 角色特效（Zzz / 爱心 / 灰尘）
   // 格子必须容得下最大的一件（地毯 108 宽、床 64 高），否则会互相切边
   var CELL_W = 112
   var CELL_H = 72
   var COLS = 6
   var ROWS = 11
   var ATLAS_W = CELL_W * COLS
-  var ATLAS_H = CELL_H * ROWS
+  var ATLAS_H = CELL_H * (ROWS + 4)
 
   // 纹理坐标：格坐标 → 房间底图像素
   //   与 scene.project 的关系：先算世界像素，再减掉 ROOM_RECT 左上角
@@ -391,8 +393,10 @@
     }
     for (var y = 0; y < h; y++) {
       var row = data.rows[y] || ''
+      // rows 可能是字符串（家具素材）或字符数组（角色帧）：两种都吃
+      var isStr = typeof row === 'string'
       for (var x = 0; x < w; x++) {
-        var ch = row.charAt(x)
+        var ch = isStr ? row.charAt(x) : row[x]
         if (ch === '' || ch === '.') continue
         var idx = parseInt(ch, 36)
         var c = rgb[idx]
@@ -405,6 +409,59 @@
       }
     }
     ctx.putImageData(img, ox, oy)
+  }
+
+  // ---------- 角色特效 ----------
+  // 全部 1px 硬边、无抗锯齿：与角色帧同一个像素栅格，放大后才不脏
+  function paintPattern(ctx, x, y, rows, fill, hi) {
+    for (var j = 0; j < rows.length; j++) {
+      var row = rows[j]
+      for (var i = 0; i < row.length; i++) {
+        var ch = row.charAt(i)
+        if (ch === '.') continue
+        ctx.fillStyle = ch === 'o' ? hi : fill
+        ctx.fillRect(x + i, y + j, 1, 1)
+      }
+    }
+  }
+
+  function paintZzz(ctx, x, y) {
+    paintPattern(ctx, x, y, ['..####.', '....@..', '...#...', '..#....', '.####..'], '#EFE3D2', '#9A8B78')
+  }
+
+  function paintHeart(ctx, x, y) {
+    paintPattern(ctx, x, y, ['.@..@..', '@o@.@@@', '@@@@@@@', '.@@@@@.', '..@@@..', '...@...'], '#FF7B8A', '#FFC2C9')
+  }
+
+  function paintDust(ctx, x, y) {
+    paintPattern(ctx, x, y, ['#.#', '.#.', '#..'], 'rgba(201,185,162,0.85)', 'rgba(235,224,206,0.9)')
+  }
+
+  // 小球：暖橙红 + 深描边 + 奶油高光（9×9；地板是暖棕色，球必须比地板更亮才认得出）
+  function paintBall(ctx, x, y) {
+    paintPattern(
+      ctx,
+      x,
+      y,
+      [
+        '..#####..',
+        '.#ooooo#.',
+        '#oo@@@oo#',
+        '#o@@@@@o#',
+        '#o@@@@@o#',
+        '#o@@@@@o#',
+        '.#@@@@@#.',
+        '.#@@@@@#.',
+        '..#####..',
+      ],
+      '#E2573A',
+      '#FFE2B0'
+    )
+  }
+
+  // 小星星：搞怪时头顶冒的（5×5，金色）
+  function paintStar(ctx, x, y) {
+    paintPattern(ctx, x, y, ['..#..', '.ooo.', '#ooo#', '.o.o.', '..#..'], '#F6C96A', '#FFF0C0')
   }
 
   // ---------- 拖动落点高亮 ----------
@@ -610,6 +667,35 @@
       }
       cells['x/' + ex.id] = { x: exX, y: exY, w: exW, h: exH }
     }
+
+    // 角色动画帧（tools/actor-frames.mjs 生成，行 11 起）。素材缺失时跳过 ——
+    // 这时 actor 取不到 cell，不画（不会白屏，也不会报错）。
+    var AF = root.NibbleActorFrames
+    if (AF && AF.frames) {
+      var names = Object.keys(AF.frames)
+      for (var a = 0; a < names.length; a++) {
+        var acx = (a % COLS) * CELL_W
+        var acy = (ROWS + Math.floor(a / COLS)) * CELL_H
+        var ax = acx + Math.round((CELL_W - AF.w) / 2)
+        var ay = acy + (CELL_H - AF.h)
+        paintFromPixels(ctx, { w: AF.w, h: AF.h, palette: AF.palette, rows: AF.frames[names[a]] }, ax, ay)
+        cells['actor/' + names[a]] = { x: ax, y: ay, w: AF.w, h: AF.h }
+      }
+    }
+
+    // 角色特效（Zzz / 爱心 / 灰尘 / 小球 / 星星）：第 14 行
+    // ⚠️ 角色帧现在有 14 张（6 列 × 3 行 = 第 11~13 行），特效必须再往下让一行，否则会被帧覆盖
+    var fxY = (ROWS + 3) * CELL_H
+    paintZzz(ctx, 2, fxY + 2)
+    cells['fx/zzz'] = { x: 2, y: fxY + 2, w: 7, h: 6 }
+    paintHeart(ctx, 18, fxY + 2)
+    cells['fx/heart'] = { x: 18, y: fxY + 2, w: 7, h: 6 }
+    paintDust(ctx, 34, fxY + 2)
+    cells['fx/dust'] = { x: 34, y: fxY + 2, w: 4, h: 3 }
+    paintBall(ctx, 44, fxY)
+    cells['fx/ball'] = { x: 44, y: fxY, w: 9, h: 9 }
+    paintStar(ctx, 56, fxY + 3)
+    cells['fx/star'] = { x: 56, y: fxY + 3, w: 5, h: 5 }
 
     // paintMountSlot：让 view 层在玩家换挂件时只重画一格，再由后端重传纹理
     return {

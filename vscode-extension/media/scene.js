@@ -144,6 +144,57 @@
     if (tint) ctx.globalAlpha = 1
   }
 
+  // 角色帧 → 24×24 扁平 hex 数组（与 state.player 同格式，drawFlat / 罩色逻辑可原样复用）
+  // 帧表来自 window.NibbleActorFrames（小屋那份，同一真源）；没加载时回落到 state.player。
+  var AF = typeof window !== 'undefined' ? window.NibbleActorFrames : null
+  var frameFlats = {}
+  function frameFlat(name) {
+    if (!AF || !AF.frames || !AF.frames[name]) return null
+    if (frameFlats[name]) return frameFlats[name]
+    var rows = AF.frames[name]
+    var pal = AF.palette || []
+    var flat = new Array(GRID * GRID)
+    for (var y = 0; y < GRID; y++) {
+      var row = rows[y] || ''
+      for (var x = 0; x < GRID; x++) {
+        var ch = row.charAt ? row.charAt(x) : row[x]
+        flat[y * GRID + x] = ch && ch !== '.' ? pal[parseInt(ch, 36)] || '' : ''
+      }
+    }
+    frameFlats[name] = flat
+    return flat
+  }
+
+  // 庆祝用的 7×6 小爱心（硬边像素，两档暖粉，不引入新色板）
+  function drawHeart(x0, y0, a) {
+    var P = ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...']
+    ctx.globalAlpha = a == null ? 1 : a
+    for (var y = 0; y < P.length; y++) {
+      for (var x = 0; x < 7; x++) {
+        if (P[y].charAt(x) !== '#') continue
+        ctx.fillStyle = y < 2 ? '#ffd1dc' : '#ff8fa3'
+        ctx.fillRect(Math.round(x0) + x, Math.round(y0) + y, 1, 1)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // 生气符号（💢 的四段弧）：7×7 硬边像素，红；出现在攻击时的头顶右侧
+  function drawAnger(x0, y0, now) {
+    var P = ['.##.##.', '.#...#.', '..#.#..', '.......', '..#.#..', '.#...#.', '.##.##.']
+    // 轻微搏动：每 160ms 在 0/1 之间跳（不加渐变，保持硬边）
+    var pulse = Math.floor(now / 160) % 2
+    ctx.globalAlpha = pulse ? 1 : 0.78
+    for (var y = 1; y < P.length - 1; y++) {
+      for (var x = 1; x < 6; x++) {
+        if (P[y].charAt(x) !== '#') continue
+        ctx.fillStyle = '#E23B2E'
+        ctx.fillRect(Math.round(x0) + x, Math.round(y0) + y, 1, 1)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
   // 24 格 → 12 格（每格取块内出现最多的非空色）：武器格子图标用，整数倍缩小才不糊
   function downscaleFlat(flat, from, to) {
     var step = from / to, out = new Array(to * to)
@@ -193,6 +244,12 @@
   var tickMsEst = 400 // tick 间隔估计
   var hitFlashAt = -1e9 // 受击闪白起始时间（255ms 内衰减，比按帧数更跟手）
   var playerHitAt = -1e9 // 主角挨打（反击帧）起始时间：暖红罩 + 下压 1 格 + 被打退一步
+  // 主角表情/呼吸（0.7.0）：帧表与小屋同一份（actor-frames.js），战斗页只借用"脸"，
+  // 位移仍由 playerShift / lunge 算 —— 两套互不干扰。
+  var idleSince = 0 // 最近一次"有动作"的时间（用于 25s 后打哈欠）
+  var yawnUntil = 0 // 待机哈欠的结束时间（0 = 没在打）
+  var victoryAt = 0 // 击杀庆祝起点（holdingKill 结束即收）
+  var heartAt = 0 // 庆祝冒心的下一次时间
 
   var dmgAt = 0 // 飘字弹出时间（上浮按时间推）
   var lungeAt = 0 // 前冲上升沿时间（前冲改"冲出去再收回来"的半波曲线）
@@ -501,6 +558,42 @@
 
     // 反击帧（管线的最后一拍，仅 countered 的施放有）：怪物朝玩家倾 2 格
     var now = Date.now()
+
+    // —— 主角表情（只用帧换"脸"，位移仍由 playerShift / lunge 负责）——
+    //   待机：stand→breathe→stand→stand 四拍循环（1.6s 一次呼吸，不改全局 400ms 节拍）
+    //   施放：命中拍及后一拍张嘴（≈800ms）
+    //   挨打：闭眼 2 拍（红罩仍 180ms 淡出）
+    //   击杀：闭眼 + 两下小跳 + 冒心，新怪出现即收
+    //   待机 >25s：打一个哈欠
+    var impactP = castFx && castFx.impactAt != null ? castFx.impactAt : 2
+    var busy = !!tick.lunge || castPhase >= 0 || now - playerHitAt < 800 || holdingKill
+    if (busy) {
+      idleSince = now
+      yawnUntil = 0
+    } else if (!idleSince) {
+      idleSince = now
+    }
+    if (!busy && !yawnUntil && now - idleSince > 25000) yawnUntil = now + 800
+    if (yawnUntil && now > yawnUntil) {
+      yawnUntil = 0
+      idleSince = now
+    }
+    var beat = Math.floor(now / 400) % 4
+    var pFrame = 'stand'
+    if (holdingKill) pFrame = 'happy'
+    else if (now - playerHitAt < 800) pFrame = 'happy'
+    else if (castFx && castPhase >= impactP && castPhase <= impactP + 1) pFrame = 'angry2' // 喊招：龇牙 + 压头
+    else if (tick.lunge) pFrame = 'angry' // 普攻前冲：龇牙
+    else if (yawnUntil) pFrame = Math.floor(now / 400) % 2 ? 'yawn2' : 'yawn1'
+    else if (beat === 1) pFrame = 'breathe'
+    var pFlat = frameFlat(pFrame)
+    // 庆祝：holdingKill 期间算 victory；新怪出现（holdingKill 结束）立刻收
+    if (holdingKill && !victoryAt) {
+      victoryAt = now
+      heartAt = 0
+    } else if (!holdingKill && victoryAt) {
+      victoryAt = 0
+    }
     var counterAt = castFx && castFx.countered ? (castFx.frames || 3) - 1 : -1
     var enemyOx = castPhase === counterAt ? -2 : 0
     // 相位内进度（0..0.95）：rAF 把相位内的运动摊到 60fps（位置仍按格取整）
@@ -515,6 +608,11 @@
       var oy = isP ? (tick.lunge || !tick.frame ? 0 : 1) : 0
       if (!isP && castHit && now - hitFlashAt < 140) oy += 1 // 命中顿帧：被打的那一瞬往下压 1 格
       if (isP && now - playerHitAt < 160) oy += 1 // 主角挨打：同样下压 1 格的顿帧
+      // 击杀庆祝：600ms 一下、共两下小跳（只有 holdingKill 期间，新怪出现即停）
+      if (isP && holdingKill && victoryAt) {
+        var vt = ((now - victoryAt) % 600) / 600
+        oy -= Math.round(Math.sin(vt * Math.PI) * 2)
+      }
       // 击杀打飞：命中帧起 1 拍内被打出去（右移 12 格 + 抬空 5 格，先快后慢），
       // 随后在空里继续沿用老的"隔帧闪烁"消散——打飞与闪烁是叠加，不是替换
       if (!isP && holdingKill && killFlyAt) {
@@ -531,15 +629,28 @@
       var hide = !isP && (holdingKill
         ? killDissolve > 0 && tick.frame % 2 === 0
         : tick.dissolve && tick.frame % 2 === 0)
-      drawFlat(slots[a].flat, slots[a].x + ox, slots[a].y + oy, hide)
+      // 主角用帧（呼吸/张嘴/闭眼），敌人仍用一张图；两边的罩色路径完全一样
+      var bodyFlat = isP && pFlat ? pFlat : slots[a].flat
+      drawFlat(bodyFlat, slots[a].x + ox, slots[a].y + oy, hide)
       // 受击闪白：命中后 255ms 内整格提亮并衰减（特效画在闪白之上，太亮太久会把特效吃掉）
       if (!isP && now - hitFlashAt < 255) {
-        drawFlat(slots[a].flat, slots[a].x + ox, slots[a].y + oy, hide, CORE, 0.55 * (1 - (now - hitFlashAt) / 255))
+        drawFlat(bodyFlat, slots[a].x + ox, slots[a].y + oy, hide, CORE, 0.55 * (1 - (now - hitFlashAt) / 255))
       }
       // 主角挨打（反击帧）：暖红罩 180ms 衰减——白 = 敌人在掉血，红 = 我在掉血，一眼分得开
       // （0.42 而不是敌方的 0.55：整格罩色会把角色压成一个橙块，主角的脸/轮廓得留住）
       if (isP && now - playerHitAt < 180) {
-        drawFlat(slots[a].flat, slots[a].x + ox, slots[a].y + oy, hide, '#ff7043', 0.42 * (1 - (now - playerHitAt) / 180))
+        drawFlat(bodyFlat, slots[a].x + ox, slots[a].y + oy, hide, '#ff7043', 0.42 * (1 - (now - playerHitAt) / 180))
+      }
+      // 生气符号：普攻前冲 / 施放命中时挂在头顶右侧（与 pFrame 的撇嘴同步）
+      if (isP && (tick.lunge || (castFx && castPhase >= impactP && castPhase <= impactP + 1))) {
+        drawAnger(slots[a].x + ox + 15, slots[a].y + oy + 1, now)
+      }
+      // 庆祝时在头顶冒一颗心（纯表现，跟着跳）
+      if (isP && holdingKill && victoryAt && now - heartAt > 480) {
+        heartAt = now
+      }
+      if (isP && holdingKill && victoryAt) {
+        drawHeart(slots[a].x + ox + 9, slots[a].y + oy - 5 - (((now - victoryAt) / 22) % 10), 1)
       }
     }
 

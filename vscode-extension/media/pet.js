@@ -28,6 +28,7 @@
   let castMsg = null // 最近一次 cast 消息（命中帧的抖屏要读它的 tier/fx）
   let killName = null // 击杀消散期间继续显示的"被打死那只"（含名字/档位/稀有度）
   let killNameTicks = 0 // killName 的剩余帧数
+  let lastDefeats = null // 上一次的击杀数：增加时让小屋播庆祝（actor 内部 30 秒节流）
 
   // 把 24x24 的扁平颜色数组画到 canvas 上（'' 表示透空）
   function drawSprite(canvas, flatGrid, shiftX, shiftY, hidden) {
@@ -895,7 +896,11 @@
     if (!msg) return
     // 小屋（家园）存档跟着 tick/state 一起到。applyHome 只在第一次生效，
     // 之后以本地摆放为准，重复调用是空操作。
-    if (msg.home && window.NibbleHome) window.NibbleHome.applyHome(msg.home)
+    if (msg.home && window.NibbleHome) {
+      window.NibbleHome.applyHome(msg.home)
+      // 久别状态（落灰/趴睡/醒来）每次 state 都要同步，不能像布局那样只认第一次
+      if (window.NibbleHome.setMood) window.NibbleHome.setMood(msg.home)
+    }
     if (msg.type === 'state') applyState(msg)
     else if (msg.type === 'tick') {
       tick = msg
@@ -907,6 +912,11 @@
         // 风险层（第三刀）：玩家血量随每次攻击变化
         if (typeof msg.playerHp === 'number') state.playerHp = msg.playerHp
         if (typeof msg.playerMaxHp === 'number') state.playerMaxHp = msg.playerMaxHp
+      }
+      // 击杀庆祝（小屋表演层）：defeats 增加即触发，actor 内部做 30 秒节流
+      if (typeof msg.defeats === 'number') {
+        if (lastDefeats !== null && msg.defeats > lastDefeats && window.NibbleHome) window.NibbleHome.celebrate()
+        lastDefeats = msg.defeats
       }
       if (killNameTicks > 0 && --killNameTicks === 0) killName = null
       if (pipe) {
@@ -1064,6 +1074,8 @@
     // 小屋布局变更 → 一条消息落盘（松手/换套装才发，不在拖动过程中连续写）
     if (window.NibbleHome) {
       window.NibbleHome.setCommit((home) => api.postMessage({ type: 'homeSave', home }))
+      // 久别醒来的演出播完 → 回写 seen（否则每次启动都重演一遍）
+      window.NibbleHome.setWakeSeen((at) => api.postMessage({ type: 'homeWakeSeen', at }))
     }
     window.addEventListener('message', (e) => onMessage(e.data || {}))
     const btnAttack = $('attack')

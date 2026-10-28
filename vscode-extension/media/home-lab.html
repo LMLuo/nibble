@@ -60,13 +60,24 @@
 </div>
 
 <script src="furniture-pixels.js"></script>
+<script src="actor-frames.js"></script>
 <script src="home-data.js"></script>
 <script src="home-scene.js"></script>
 <script src="home-atlas.js"></script>
 <script src="home-gl.js"></script>
 <script src="home-2d.js"></script>
+<script src="home-actor.js"></script>
 <script src="home-view.js"></script>
 <script>
+  // 样张页：?away=1 预览"离开 72 小时"（落灰 + 趴睡）；?wake=1 预览醒来演出
+  var q = location.search
+  if (q.indexOf('away=1') >= 0 || q.indexOf('wake=1') >= 0) {
+    var away = q.indexOf('wake=1') < 0
+    NibbleHome.setMood({
+      lastSeen: Date.now() - (q.indexOf('wake=1') >= 0 ? 0 : 4 * 24 * 3600 * 1000),
+      wake: away ? null : { at: Date.now() - 1000, hours: 96, item: 'study_chair' },
+    })
+  }
   NibbleHome.mount()
 </script>
 </body>

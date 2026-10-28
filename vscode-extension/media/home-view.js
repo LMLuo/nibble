@@ -16,8 +16,12 @@
   var instance = null
   // 宿主的提交回调（pet.js 在 hasHost 时注入；官网/样张页没有 → commit 是空操作）
   var commitHook = null
+  // "醒来演出已播完"的回写（同 commitHook 的注入方式；没有宿主时是空操作）
+  var wakeSeenHook = null
   // 小屋还没打开过时收到的存档，先存着，等 mount 再应用（避免平白建一次图集）
   var pendingHome = null
+  // 同上：小屋没建过时收到的情绪状态（lastSeen / wake）
+  var pendingMood = null
   // 玩家收藏（pet.js 推过来）：{ weapons: {list, sprites, owned}, enemies: {list, sprites, defeated} }
   // 放在模块级而不是实例内：小屋没打开时数据也会到，先接着。
   var assetStore = { weapons: null, enemies: null }
@@ -28,6 +32,8 @@
 
     var scene = root.NibbleHomeScene.createScene({})
     var atlas = root.NibbleHomeAtlas.build()
+    // 屋里的小狗：行为/动画在 home-actor.js，这里只负责推进与合流绘制列表
+    var actor = root.NibbleHomeActor ? root.NibbleHomeActor.create(scene) : null
 
     // 优先 WebGL2；拿不到就落到 canvas2d，功能一点不少。
     // 加 ?force2d=1 可强制走兜底路径（调样式、验降级时用）
@@ -152,13 +158,40 @@
     }
 
     // ---------- 绘制 ----------
+    // 角色/特效插进家具的深度序列。
+    // 只看 obj / shadow：地毯是地板层（depth -1e7），预览幽灵是覆盖层（1e9+），都不是深度序。
+    // ⚠️ 曾经把 rug 也算进来，结果小狗被插到地毯后面、整只藏进床底下（踩过一次）。
+    function insertSprite(list, entry) {
+      var after = -1 // 最后一个比它浅的家具条目
+      var first = -1 // 第一件家具（比所有家具都浅时插在它前面）
+      for (var i = 0; i < list.length; i++) {
+        var it = list[i]
+        if (it.kind !== 'obj' && it.kind !== 'shadow') continue
+        if (it.depth > 1e8) break // 幽灵/预览开始，后面都是覆盖层
+        if (first < 0) first = i
+        if (it.depth > entry.depth) {
+          list.splice(i, 0, entry)
+          return
+        }
+        after = i
+      }
+      if (after >= 0) list.splice(after + 1, 0, entry)
+      else if (first >= 0) list.splice(first, 0, entry)
+      else list.push(entry)
+    }
+
     function draw() {
       if (!active) return
       var cam = scene.camera
       var light = lightScreen()
       // 光照色跟随地板系列（房间的主色调）
       var set = D.SET_INDEX[D.seriesOfItem(scene.skins.floor)] || D.SETS[0]
-      backend.draw(scene.buildDrawList(), {
+      var list = scene.buildDrawList()
+      if (actor) {
+        var extra = actor.entries()
+        for (var i = 0; i < extra.length; i++) insertSprite(list, extra[i])
+      }
+      backend.draw(list, {
         zoom: scene.zoomLevel(),
         panX: cam.panX,
         panY: cam.panY,
@@ -168,12 +201,29 @@
       })
     }
 
+    // 角色在动，所以 mount 期间需要常驻逐帧循环（只在视图可见时跑，切走立即停）。
+    // invalidate 保留原语义：第一次调度会顺手把循环拉起来，重复调用是空操作。
+    var lastTs = 0
+    var lastPaint = 0
+    function loop(ts) {
+      if (!active) {
+        rafId = 0
+        return
+      }
+      rafId = root.requestAnimationFrame(loop)
+      var dt = lastTs ? Math.min(0.06, (ts - lastTs) / 1000) : 1 / 60
+      lastTs = ts
+      if (actor) actor.tick(dt)
+      // 30fps 足够（像素动画本来就是 7~8fps），底部面板里没必要 60fps 常驻烧 CPU
+      if (ts - lastPaint >= 32) {
+        lastPaint = ts
+        draw()
+      }
+    }
+
     function invalidate() {
       if (!active || rafId) return
-      rafId = root.requestAnimationFrame(function () {
-        rafId = 0
-        draw()
-      })
+      rafId = root.requestAnimationFrame(loop)
     }
 
     function hexToRgb(hex) {
@@ -441,6 +491,7 @@
         if (pp && pp.valid) {
           pushHistory()
           scene.confirmPlacing()
+          if (actor) actor.validate()
           renderSets()
           if (depot && !depot.classList.contains('hidden')) renderDepot()
           syncPlacingTip()
@@ -452,6 +503,12 @@
       var forcePan = e.shiftKey || e.button === 2 || e.button === 1
 
       if (!forcePan) {
+        // 先判小狗：点它 = 逗一下（角色才 24×24，不会挡着抓家具）
+        if (actor && actor.hitTest(w.x, w.y)) {
+          actor.poke()
+          invalidate()
+          return
+        }
         var d = scene.startDrag(w.x, w.y)
         if (d) {
           mode = 'drag'
@@ -505,6 +562,7 @@
         if (done && done.moved && done.ok) {
           history.push(before)
           if (history.length > MAX_HISTORY) history.shift()
+          if (actor) actor.validate() // 家具压到狗身上时把它挪开
           commit()
         }
       }
@@ -997,25 +1055,132 @@
       if (!home || typeof home !== 'object') return false
       // 拥有状态每次都要同步：掉出新物品要立刻反映到仓库，不能被「只应用一次」挡住
       var ownedChanged = false
+      var shrunk = false // 服务端件数比本地少 = 重置 / 换档，必须按服务端全量重建
       if (home.owned && typeof home.owned === 'object') {
-        for (var k in home.owned) {
-          if (home.owned[k] && D.ITEM_INDEX[k] && !ownedItems[k]) {
-            ownedItems[k] = true
-            ownedChanged = true
+        var serverN = 0
+        var clientN = 0
+        var k
+        for (k in home.owned) if (home.owned[k]) serverN++
+        for (k in ownedItems) if (ownedItems[k]) clientN++
+        if (serverN < clientN) {
+          ownedItems = {}
+          for (k in home.owned) if (home.owned[k]) ownedItems[k] = true
+          ownedChanged = true
+          shrunk = true
+        } else {
+          for (k in home.owned) {
+            if (home.owned[k] && D.ITEM_INDEX[k] && !ownedItems[k]) {
+              ownedItems[k] = true
+              ownedChanged = true
+            }
           }
         }
       }
-      if (homeSynced) {
-        if (ownedChanged) renderSets()
+      if (homeSynced && !shrunk) {
+        if (ownedChanged) {
+          renderSets()
+          // 仓库抽屉正开着时也要立刻点亮新掉的那件（否则要关掉再开才看得到）
+          if (depotOpen) renderDepot()
+        }
         return false
       }
+      // 重置后 layout 是空数组：此时要回到默认摆位，而不是"保持旧房间不动"
       if (home.skins) scene.setSkins(home.skins)
-      if (Array.isArray(home.layout) && home.layout.length) scene.setLayout(home.layout)
+      if (Array.isArray(home.layout) && (home.layout.length || shrunk)) {
+        scene.setLayout(home.layout.length ? home.layout : D.DEFAULT_LAYOUT)
+      }
+      if (actor) actor.validate()
       homeSynced = true
       syncRoom()
       renderSets()
+      if (depotOpen) renderDepot()
       invalidate()
       return true
+    }
+
+    // ---------- 久别（72 小时）与情绪 ----------
+    // 判定口径：存档里的 lastSeen（每次攻击都会刷新）距今 ≥ 72h → 屋子落灰、小狗趴睡。
+    // 真正的"醒来 + 一次性奖励"由宿主在攻击时结算（home.wake），这里只负责播演出。
+    var AWAY_MS = 72 * 60 * 60 * 1000
+    var WAKE_LINES = [
+      '你回来啦。屋里的灰我都扫干净了。',
+      '好久不见……我睡了好久，尾巴都压麻了。',
+      '你不在的时候，我把家看好了。',
+      '终于回来了。我还以为你要搬走了。',
+    ]
+    var moodDusty = false
+    var wakeSeen = 0
+    var lastMoodHome = null
+    var sayEl = null
+    var sayTimer = 0
+
+    function ensureSay() {
+      if (sayEl) return sayEl
+      var stage = rootEl.querySelector('#homeStage')
+      if (!stage) return null
+      sayEl = document.createElement('div')
+      sayEl.className = 'homeSay'
+      stage.appendChild(sayEl)
+      return sayEl
+    }
+
+    function say(text, ms) {
+      var el = ensureSay()
+      if (!el) return
+      el.textContent = text
+      el.classList.add('on')
+      if (sayTimer) clearTimeout(sayTimer)
+      sayTimer = setTimeout(function () {
+        el.classList.remove('on')
+      }, ms || 6500)
+    }
+
+    function itemName(id) {
+      var it = D.ITEM_INDEX[id]
+      return it ? it.name : String(id)
+    }
+
+    function applyDustClass(on) {
+      moodDusty = !!on
+      if (canvas) canvas.classList.toggle('dusty', !!on)
+    }
+
+    function applyMood(home) {
+      if (!home || typeof home !== 'object') return
+      lastMoodHome = home
+      if (!actor) return
+      var wake = home.wake && Number(home.wake.at) > 0 && !home.wake.seen ? home.wake : null
+      // 新事件：同一个 wake.at 只播一次；播完回写 seen，重开面板不再重复"你回来啦"
+      if (wake && wake.at > wakeSeen) {
+        if (!active) {
+          // 面板在战斗页：演出先欠着，等切到小屋再补（否则播在看不见的地方，还白白标记已看）
+          return
+        }
+        wakeSeen = wake.at
+        applyDustClass(false)
+        actor.wake()
+        var line = WAKE_LINES[Math.abs(Math.floor(wake.at / 1000)) % WAKE_LINES.length]
+        var tail = wake.item
+          ? ' 还从角落里翻出「' + itemName(wake.item) + '」，给你摆好了。'
+          : ' 家里干净得很，没什么可收拾的。'
+        var text = line + tail
+        say(text, 8000)
+        if (wakeSeenHook) wakeSeenHook(wake.at)
+        invalidate()
+        return
+      }
+      // 没有新事件：按 lastSeen 决定是否落灰 / 趴睡
+      var last = Number(home.lastSeen) || 0
+      var dusty = last > 0 && Date.now() - last >= AWAY_MS
+      if (dusty === moodDusty) return
+      applyDustClass(dusty)
+      if (dusty) {
+        actor.setAway(true, 1)
+        if (active) say('屋子落了灰，它趴在角落睡着了。', 5200)
+      } else {
+        actor.setAway(false, 0)
+      }
+      invalidate()
     }
 
     // ---------- 生命周期 ----------
@@ -1033,6 +1198,9 @@
       autoFit()
       syncZoomLabel()
       if (els.backend) els.backend.textContent = backend.name === 'webgl2' ? 'WebGL2' : 'Canvas2D 兜底'
+      // 存档可能在小屋没打开时就到了（战斗页触发了醒来）→ 进小屋时补播
+      if (lastMoodHome) applyMood(lastMoodHome)
+      lastTs = 0
       invalidate()
     }
 
@@ -1047,6 +1215,7 @@
         root.cancelAnimationFrame(rafId)
         rafId = 0
       }
+      lastTs = 0
       scene.cancelDrag()
       mode = null
     }
@@ -1081,6 +1250,18 @@
       },
       invalidate: invalidate,
       applyHome: applyHome,
+      // 情绪层（久别/落灰/醒来）：存档里带 lastSeen 与 wake，每次 state 都会推进来
+      setMood: applyMood,
+      pokeActor: function () {
+        if (actor) actor.poke()
+      },
+      celebrate: function () {
+        if (actor) return actor.celebrate()
+        return false
+      },
+      actorState: function () {
+        return actor ? { pos: actor.pos, state: actor.state, dust: actor.dust, prop: actor.prop } : null
+      },
       snapshot: snapshot,
       // 收藏数据变动后重算陈列（数据本体存在模块级 assetStore 里）
       refreshMounts: function () {
@@ -1128,6 +1309,10 @@
         h.applyHome(pendingHome)
         pendingHome = null
       }
+      if (pendingMood) {
+        h.setMood(pendingMood)
+        pendingMood = null
+      }
       return h
     },
     unmount: function () {
@@ -1148,9 +1333,24 @@
       pendingHome = home
       return true
     },
+    // 情绪层：lastSeen（落灰/趴睡）与 wake（醒来演出）。小屋没打开时先存着，
+    // 打开那一刻补播（不然战斗页触发的醒来演出会被静默丢掉）。
+    setMood: function (home) {
+      if (!home || typeof home !== 'object') return false
+      if (instance) {
+        instance.setMood(home)
+        return true
+      }
+      pendingMood = home
+      return true
+    },
     // pet.js 在 hasHost 时注入：布局变更 → 一条 postMessage，由宿主落盘
     setCommit: function (fn) {
       commitHook = typeof fn === 'function' ? fn : null
+    },
+    // 醒来演出播完 → 回写 seen（不注入时什么都不做，官网演示因此会重播，可接受）
+    setWakeSeen: function (fn) {
+      wakeSeenHook = typeof fn === 'function' ? fn : null
     },
     // 玩家收藏：pet.js 收到 arsenalData / bestiaryData 时推进来。
     // kind = 'weapons' 时 owned 是 {id:count}；kind = 'enemies' 时 owned 是 defeated。
@@ -1162,6 +1362,17 @@
     },
     get scene() {
       return instance ? instance.scene : null
+    },
+    // 自检/调试：小狗此刻在哪、在干什么
+    actorState: function () {
+      return instance ? instance.actorState() : null
+    },
+    poke: function () {
+      if (instance) instance.pokeActor()
+    },
+    // 击杀庆祝（宿主在 defeats 增加时调一次；小屋没打开时什么也不做）
+    celebrate: function () {
+      return instance ? instance.celebrate() : false
     },
   }
 

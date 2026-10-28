@@ -2,7 +2,7 @@
   "name": "nibble",
   "displayName": "Nibble 像素小兽 (Pixel Pet)",
   "description": "A pixel puppy living in your status bar and bottom panel: attacks once per prompt or file save, levels up, collects 80 weapons (20% drop), loots 50 skill books (4 slots / 12 combos), battles 40 bug-monsters that hit back, remembers progress. 像素小狗陪伴：提问/保存即攻击、升级、20% 概率掉武器（提供战力加成）、10% 掉技能书（50 本 / 4 槽装配 / 12 条组合）、玩家血量与怪物反击（击退零惩罚）、40 只「编程 Bug」怪物图鉴、跨会话存档。",
-  "version": "0.6.9",
+  "version": "0.7.0",
   "publisher": "nibble",
   "license": "MIT",
   "icon": "icon.png",

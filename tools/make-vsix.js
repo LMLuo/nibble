@@ -89,7 +89,9 @@ function zip(entries) {
 }
 
 // ---------------- 收集文件 ----------------
-const EXCLUDE = new Set(['.vscodeignore', 'config.json', 'media/preview.html'])
+// media/preview.html 与 bestiary-preview.png 都是 tools 生成的调试产物，只服务本地预览，
+// README 里引用的是 GitHub 绝对地址，所以不必进包（省 60KB+）
+const EXCLUDE = new Set(['.vscodeignore', 'config.json', 'media/preview.html', 'media/bestiary-preview.png'])
 const SKIP_DIRS = new Set(['icon-src', 'node_modules', '.vscode', '.git'])
 function walk(dir, rel = '') {
   const out = []

@@ -359,12 +359,16 @@ function homeItemName(id) {
   const s = HOME_SERIES.find((x) => x.id === sid)
   return (s ? s.name : sid) + '·' + (HOME_SLOT_NAME[slot] || slot)
 }
-// 保底/掉落概率
-const HOME_DROP_RATE = 0.02
-const HOME_PITY_LIMIT = 40
+// 保底/掉落概率（2026-10-28 调过：2%/40 只太稀，实测 45 次击杀才出 1 件，玩家会觉得"根本不掉"）
+//   5% + 25 只保底 → 平均约 16 次击杀一件，集齐 60 件约需 950 次击杀
+const HOME_DROP_RATE = 0.05
+const HOME_PITY_LIMIT = 25
+// 久别（72 小时没活动）：屋子落灰、小狗趴睡；下次活动时自己醒来并打扫，给一次性小奖励。
+// ⚠️ 前端 home-view.js 里有同一个 72h 常量（只用于"进面板时先看到落灰"），改这里要同步改那边。
+const HOME_AWAY_MS = 72 * 60 * 60 * 1000
 
 function parseHome(h) {
-  const out = { skins: freshHomeSkins(), layout: [], owned: freshHomeOwned(), pity: 0 }
+  const out = { skins: freshHomeSkins(), layout: [], owned: freshHomeOwned(), pity: 0, lastSeen: 0, wake: null }
   if (!h || typeof h !== 'object') return out
 
   // skins：每个槽位只认自己那 5 个物品（'wood_bed' 只能进 bed 位）
@@ -408,6 +412,19 @@ function parseHome(h) {
   }
 
   out.pity = Math.max(0, Number(h.pity) || 0)
+  // allNotified：家具集齐的提示只写一次日志，避免每杀一只都刷一行
+  out.allNotified = !!h.allNotified
+  // 久别状态：lastSeen 是"最后一次活动"（每次攻击刷新），wake 是上一次醒来的结算结果
+  out.lastSeen = Math.max(0, Number(h.lastSeen) || 0)
+  if (h.wake && typeof h.wake === 'object' && Number(h.wake.at) > 0) {
+    out.wake = {
+      at: Number(h.wake.at),
+      hours: Math.max(1, Math.round(Number(h.wake.hours) || 1)),
+      item: HOME_ITEM_SET.has(String(h.wake.item)) ? String(h.wake.item) : null,
+      // seen：前端播过演出后回写。false 时面板一打开就补播，true 之后不再重复
+      seen: !!h.wake.seen,
+    }
+  }
   return out
 }
 
@@ -437,6 +454,9 @@ function ensureHome(s) {
   if (!s.home.skins || typeof s.home.skins !== 'object') s.home.skins = freshHomeSkins()
   if (typeof s.home.pity !== 'number' || s.home.pity < 0) s.home.pity = 0
   if (!Array.isArray(s.home.layout)) s.home.layout = []
+  if (typeof s.home.lastSeen !== 'number' || s.home.lastSeen < 0) s.home.lastSeen = 0
+  if (!('wake' in s.home)) s.home.wake = null
+  if (typeof s.home.allNotified !== 'boolean') s.home.allNotified = false
   return s.home
 }
 
@@ -457,6 +477,9 @@ function resetHomeOwned() {
   home.owned = freshHomeOwned()
   home.skins = freshHomeSkins()
   home.pity = 0
+  home.lastSeen = 0
+  home.wake = null
+  home.allNotified = false
   saveSave()
   return Object.keys(home.owned).length
 }
@@ -482,6 +505,51 @@ function rollFurniture(pity, owned) {
     if (r <= 0) return { item: id, pity: 0, done: false }
   }
   return { item: pool[0], pity: 0, done: false }
+}
+
+// 久别回来的"一次性小奖励"：从没拥有的家具里按稀有度加权抽一件。
+// 不加货币、不做商店 —— 只补一件家具，和"打扫房间"这件事在语义上是一件事。
+function pickAwayGift(owned) {
+  const has = owned && typeof owned === 'object' ? owned : {}
+  const pool = HOME_ITEM_IDS.filter((id) => !has[id])
+  if (!pool.length) return null
+  let total = 0
+  for (const id of pool) total += HOME_RARITY_WEIGHT[HOME_ITEM_RARITY[id]] || 1
+  let r = Math.random() * total
+  for (const id of pool) {
+    r -= HOME_RARITY_WEIGHT[HOME_ITEM_RARITY[id]] || 1
+    if (r <= 0) return id
+  }
+  return pool[0]
+}
+
+// 每次攻击调用一次：刷新 lastSeen；距上次 ≥72h 则结算一次"醒来"（同一段离开只结算一次）
+// 返回 wake 事件或 null。纯存档逻辑，不碰渲染。
+function touchHomeAway(s, now) {
+  const home = ensureHome(s)
+  const at = Number(now) || Date.now()
+  const last = Number(home.lastSeen) || 0
+  home.lastSeen = at
+  if (!last) { // 老档 / 新档：先记一笔，不触发事件（否则谁第一次打开都会被判"离开过"）
+    home.wake = null
+    return null
+  }
+  const away = at - last
+  if (away < HOME_AWAY_MS) return null
+  const gift = pickAwayGift(home.owned)
+  if (gift) home.owned[gift] = true
+  home.wake = { at, hours: Math.max(1, Math.round(away / 3600000)), item: gift || null, seen: false }
+  return home.wake
+}
+
+// 前端播完"醒来"演出后回写：之后重开面板不再重复播（否则每次启动都来一遍"你回来啦"）
+function markWakeSeen(at) {
+  const s = reloadSave()
+  const home = ensureHome(s)
+  if (!home.wake || home.wake.at !== Number(at)) return false
+  home.wake.seen = true
+  saveSave()
+  return true
 }
 
 // 解析怪物库存档：只接受已知怪物 id（未知 id 静默丢弃，向前兼容加/删怪物）
@@ -805,7 +873,8 @@ function enemyReaction(s, enemy, info, mech, cast, strong) {
 }
 
 // 一次攻击：应用怪物机制（闪避/护盾/护甲/自愈/分裂）+ 技能出手 + 怪物反击 → 返回一行战斗日志
-function attack(s) {
+// 外层 attack() 包着它：先结算久别回来，再把那行"醒来"日志拼到战斗日志前面。
+function attackInner(s) {
   const enemy = s.enemy
   const info = enemyInfo(enemy.type)
   const mech = info.mech
@@ -1063,7 +1132,12 @@ function attack(s) {
   home.pity = fdrop.pity
   if (fdrop.item) {
     home.owned[fdrop.item] = true
+    home.allNotified = false
     log += `　🛋 获得家具「${homeItemName(fdrop.item)}」！`
+  } else if (fdrop.done && !home.allNotified) {
+    // 池子空了（60 件全拥有）时给一次明确提示：否则"打了半天什么都不掉"会被当成 bug
+    home.allNotified = true
+    log += `　🛋 家具已集齐（${HOME_ITEM_IDS.length}/${HOME_ITEM_IDS.length}），不再掉落`
   }
   spawnEnemy(s)
   const next = enemyInfo(s.enemy.type)
@@ -1071,6 +1145,21 @@ function attack(s) {
   s.logKind = ups > 0 ? 'levelup' : 'victory'
   s.lastLog = log
   return log
+}
+
+// 对外的一次攻击：先结算"离开 ≥72 小时"的醒来事件，再把那行日志拼在战斗日志前面。
+// 拆成包装层的理由：attackInner 有 5 个 return 点（闪避/反击/击退/分裂/击杀），
+// 逐处插日志必漏；包装层只管一次，逻辑不会被战斗分支污染。
+function attack(s) {
+  const wake = touchHomeAway(s, Date.now())
+  const log = attackInner(s)
+  if (!wake) return log
+  const head = wake.item
+    ? `🌙 你离开了 ${wake.hours} 小时：它把屋子打扫干净，还从角落里翻出「${homeItemName(wake.item)}」`
+    : `🌙 你离开了 ${wake.hours} 小时：它把屋子打扫干净了`
+  const full = `${head}　${log}`
+  s.lastLog = full
+  return full
 }
 
 // HP 条：默认画敌人（向后兼容）；who = 'player' 时画玩家（第三刀）
@@ -1362,6 +1451,8 @@ module.exports = {
   saveHome, parseHome, ensureHome, rollFurniture, homeItemName, unlockAllHome, resetHomeOwned,
   HOME_SLOT_IDS, HOME_EXTRA_IDS, HOME_EXTRA_MAX, HOME_SKIN_SLOTS, HOME_SERIES,
   HOME_ITEM_IDS, HOME_ITEM_RARITY, HOME_DROP_RATE, HOME_PITY_LIMIT,
+  // 久别回来：72h 判定 + 一次性家具奖励（纯存档逻辑，可单测）
+  HOME_AWAY_MS, pickAwayGift, touchHomeAway, markWakeSeen,
   // 武器库（纯收集）：数据 + 掉落 + 素材
   WEAPONS, WEAPON_INDEX, WEAPON_TOTAL, RARITY_COUNTS, PITY_LIMIT, rollWeapon, weaponSpriteGrid,
   WEAPON_POWER, bestOwnedWeapon,

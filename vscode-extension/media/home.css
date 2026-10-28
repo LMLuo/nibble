@@ -55,6 +55,41 @@
   touch-action: none;
 }
 
+/* 久别落灰：整块画布降饱和 + 轻微发黄，过渡 1.4s（醒来时缓缓恢复，不做硬切） */
+#homeCanvas {
+  transition: filter 1.4s ease;
+}
+
+#homeCanvas.dusty {
+  filter: saturate(0.55) brightness(0.94) sepia(0.16);
+}
+
+/* 小狗说话：像素气泡，右下角（不挡房间中心） */
+.homeSay {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  max-width: min(320px, 60%);
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(30, 24, 20, 0.94);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.homeSay.on {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .homeHint {
   position: absolute;
   left: 8px;
